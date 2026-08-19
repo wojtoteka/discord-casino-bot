@@ -5,6 +5,7 @@ import { join } from 'path';
 import { Database } from './database/Database';
 import { sendLevelUpDM, sendAchievementDM, sendBigWinDM, sendWelcomeDM } from './utils/notifications';
 import { sendAdminAlert } from './utils/adminAlerts';
+import { registerMainBotClient } from './utils/mainBotClient';
 
 config();
 
@@ -65,6 +66,7 @@ export class CasinoBot extends Client {
     await this.loadEvents();
 
     await this.login(process.env.DISCORD_TOKEN);
+    registerMainBotClient(this);
   }
 
   private setupNotifications(): void {

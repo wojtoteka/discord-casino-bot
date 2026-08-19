@@ -183,8 +183,19 @@ async function deploySlash(options) {
     console.log(`[${label}] Zarejestrowano ${count} komend.`);
     return { applicationId, count, guildId: guild.value || null };
   } catch (error) {
-    const raw = error?.rawError ? JSON.stringify(error.rawError) : (error.message || String(error));
-    throw new Error(`[${label}] REST.put nieudany: ${raw}`);
+    const raw = error?.rawError;
+    if (!raw) {
+      throw new Error(`[${label}] REST.put nieudany: ${error.message || String(error)}`);
+    }
+    const lines = [`${raw.message || 'Unknown error'} (code ${raw.code ?? '?'})`];
+    for (const [key, detail] of Object.entries(raw.errors || {})) {
+      const index = Number(key);
+      const name = Number.isInteger(index)
+        ? (commands[index]?.name ?? `#${key}`)
+        : key;
+      lines.push(`  → ${name}: ${JSON.stringify(detail)}`);
+    }
+    throw new Error(`[${label}] REST.put nieudany:\n${lines.join('\n')}`);
   }
 }
 

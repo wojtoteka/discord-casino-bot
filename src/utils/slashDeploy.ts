@@ -66,6 +66,26 @@ export async function registerSlashCommands(
     }
     console.log(`[${prefix}] Slash commands zarejestrowane (${body.length}).`);
   } catch (error) {
-    console.error(`[${prefix}] Błąd rejestracji slash:`, error);
+    console.error(`[${prefix}] Błąd rejestracji slash:`, describeSlashError(error, body));
   }
+}
+
+/**
+ * Discord zwraca przy 50035 tylko `errors: { '22': [Object] }`, a console.error
+ * ucina zagnieżdżone obiekty. Rozwijamy je do pełnego JSON-a i podmieniamy
+ * indeks komendy na jej nazwę, żeby od razu było widać który plik jest zły.
+ */
+function describeSlashError(error: unknown, body: unknown[]): string {
+  const raw = (error as { rawError?: { message?: string; code?: number; errors?: Record<string, unknown> } })?.rawError;
+  if (!raw) return String((error as { message?: string })?.message ?? error);
+
+  const lines: string[] = [`${raw.message ?? 'Unknown error'} (code ${raw.code ?? '?'})`];
+  for (const [key, detail] of Object.entries(raw.errors ?? {})) {
+    const index = Number(key);
+    const name = Number.isInteger(index)
+      ? (body[index] as { name?: string } | undefined)?.name ?? `#${key}`
+      : key;
+    lines.push(`  → ${name}: ${JSON.stringify(detail)}`);
+  }
+  return lines.join('\n');
 }

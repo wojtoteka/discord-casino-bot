@@ -8,6 +8,7 @@ import {
   getAdminDb,
   resolveTargetId,
 } from '../../utils/adminShared';
+import { getMainBotClient } from '../../utils/mainBotClient';
 
 export default {
   data: new SlashCommandBuilder()
@@ -66,11 +67,20 @@ export default {
       return;
     }
 
+    const mainBot = getMainBotClient();
+    if (!mainBot) {
+      await interaction.reply({
+        embeds: [EmbedHelper.errorEmbed('❌ Błąd', 'RoyalCasino (główny bot) nie jest jeszcze gotowy. Spróbuj ponownie za chwilę.')],
+        flags: 64,
+      });
+      return;
+    }
+
     const db = getAdminDb(interaction);
-    const label = await fetchUserLabel(interaction.client, target.id);
+    const label = await fetchUserLabel(mainBot, target.id);
 
     try {
-      const user = await interaction.client.users.fetch(target.id);
+      const user = await mainBot.users.fetch(target.id);
       await user.send({
         embeds: [EmbedHelper.infoEmbed('Wiadomość od administracji RoyalCasino', message)],
       });
