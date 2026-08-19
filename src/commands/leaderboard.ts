@@ -2,6 +2,7 @@ import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction } from 'discord.js';
 import { CasinoBot } from '../index';
 import { EmbedHelper, GameHelper } from '../utils/helpers';
+import { navRow } from '../utils/playerNav';
 import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
 
 export default {
@@ -69,6 +70,11 @@ export default {
       });
     }
 
-    await interaction.editReply({ embeds: [embed] });
+    await interaction.editReply({
+      embeds: [embed],
+      components: [navRow(interaction.user.id, interaction.user.id, lang, [
+        'top', 'profil', 'balance',
+      ])],
+    });
   },
 };

@@ -1,8 +1,139 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
-import { ChatInputCommandInteraction } from 'discord.js';
+import {
+  ActionRowBuilder,
+  ChatInputCommandInteraction,
+  StringSelectMenuBuilder,
+} from 'discord.js';
 import { CasinoBot } from '../index';
 import { EmbedHelper, getRequiredXP } from '../utils/helpers';
-import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
+import { withOwner } from '../utils/components';
+import { navRow } from '../utils/playerNav';
+import { getUserLang, slashLocales, slashNameLocales, t, type Lang } from '../i18n';
+
+const CATEGORIES = ['money', 'level', 'games', 'wins', 'streak'] as const;
+export type TopCategory = (typeof CATEGORIES)[number];
+
+export function parseTopCategory(value: unknown): TopCategory {
+  return CATEGORIES.includes(value as TopCategory) ? (value as TopCategory) : 'money';
+}
+
+const CATEGORY_META: Record<TopCategory, { titleKey: 'top_money' | 'top_level' | 'top_games' | 'top_wins' | 'top_streak'; descKey: 'top_money_desc' | 'top_level_desc' | 'top_games_desc' | 'top_wins_desc' | 'top_streak_desc'; emoji: string }> = {
+  money:  { titleKey: 'top_money',  descKey: 'top_money_desc',  emoji: '💰' },
+  level:  { titleKey: 'top_level',  descKey: 'top_level_desc',  emoji: '📊' },
+  games:  { titleKey: 'top_games',  descKey: 'top_games_desc',  emoji: '🎮' },
+  wins:   { titleKey: 'top_wins',   descKey: 'top_wins_desc',   emoji: '🏆' },
+  streak: { titleKey: 'top_streak', descKey: 'top_streak_desc', emoji: '🔥' },
+};
+
+type Ranked = Awaited<ReturnType<CasinoBot['db']['getAllUsers']>>[number];
+
+function sortFor(category: TopCategory, users: Ranked[]): Ranked[] {
+  switch (category) {
+    case 'level':
+      return users.sort((a, b) => (b.level || 1) - (a.level || 1) || (b.xp || 0) - (a.xp || 0));
+    case 'games':
+      return users.sort((a, b) => (b.total_games || 0) - (a.total_games || 0));
+    case 'wins':
+      return users.sort((a, b) => (b.total_wins || 0) - (a.total_wins || 0));
+    case 'streak':
+      return users.sort((a, b) => (b.daily_streak || 0) - (a.daily_streak || 0));
+    default:
+      return users.sort((a, b) => b.money - a.money);
+  }
+}
+
+function rowStat(category: TopCategory, user: Ranked): string {
+  switch (category) {
+    case 'level': {
+      const level = user.level || 1;
+      return `⭐ Lvl ${level} (${user.xp || 0}/${getRequiredXP(level)} XP)`;
+    }
+    case 'games':
+      return `🎮 ${(user.total_games || 0).toLocaleString()} gier`;
+    case 'wins': {
+      const wins = user.total_wins || 0;
+      const games = user.total_games || 0;
+      const winRate = games > 0 ? ((wins / games) * 100).toFixed(1) : '0.0';
+      return `✅ ${wins.toLocaleString()} wygranych (${winRate}%)`;
+    }
+    case 'streak': {
+      const streak = user.daily_streak || 0;
+      return `🔥 ${streak} dni ${streak >= 7 ? '🏆' : ''}`;
+    }
+    default:
+      return `💵 $${user.money.toLocaleString()}`;
+  }
+}
+
+function selfStat(category: TopCategory, user: Ranked): string {
+  switch (category) {
+    case 'level':  return `Lvl ${user.level || 1}`;
+    case 'games':  return `${(user.total_games || 0).toLocaleString()} gier`;
+    case 'wins':   return `${(user.total_wins || 0).toLocaleString()} wygranych`;
+    case 'streak': return `${user.daily_streak || 0} dni`;
+    default:       return `$${user.money.toLocaleString()}`;
+  }
+}
+
+function categoryRow(
+  ownerId: string,
+  lang: Lang,
+  active: TopCategory,
+): ActionRowBuilder<StringSelectMenuBuilder> {
+  return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId(withOwner('top_menu', ownerId))
+      .setPlaceholder(t(lang, CATEGORY_META[active].titleKey))
+      .addOptions(CATEGORIES.map(category => ({
+        value: category,
+        label: t(lang, CATEGORY_META[category].titleKey),
+        emoji: CATEGORY_META[category].emoji,
+        default: category === active,
+      }))),
+  );
+}
+
+/** Leaderboard embed + category picker, shared by the slash command and the select menu. */
+export async function buildTopPayload(
+  client: CasinoBot,
+  viewerId: string,
+  lang: Lang,
+  category: TopCategory,
+) {
+  const sorted = sortFor(category, await client.db.getAllUsers());
+  const topUsers = sorted.slice(0, 10);
+  const names = await Promise.allSettled(topUsers.map(u => client.users.fetch(u.user_id)));
+
+  const embed = EmbedHelper.goldEmbed(
+    t(lang, CATEGORY_META[category].titleKey),
+    t(lang, CATEGORY_META[category].descKey),
+  );
+
+  let leaderboardText = '';
+  for (let i = 0; i < topUsers.length; i++) {
+    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+    const fetched = names[i];
+    const label = fetched.status === 'fulfilled'
+      ? fetched.value.username
+      : `User ${topUsers[i].user_id}`;
+    leaderboardText += `${medal} **${label}**\n> ${rowStat(category, topUsers[i])}\n\n`;
+  }
+
+  embed.addFields({ name: '🏅 Ranking', value: leaderboardText || '*Brak danych*', inline: false });
+
+  const position = sorted.findIndex(u => u.user_id === viewerId);
+  if (position !== -1) {
+    embed.setFooter({ text: t(lang, 'top_you')(position + 1, selfStat(category, sorted[position])) });
+  }
+
+  return {
+    embeds: [embed],
+    components: [
+      categoryRow(viewerId, lang, category),
+      navRow(viewerId, viewerId, lang, ['ranking', 'profil', 'balance']),
+    ],
+  };
+}
 
 export default {
   data: new SlashCommandBuilder()
@@ -13,149 +144,28 @@ export default {
       option
         .setName('kategoria')
         .setNameLocalizations(slashNameLocales('category'))
-        .setDescription('Wybierz kategorię rankingu')
-        .setDescriptionLocalizations(slashLocales('Pick a leaderboard category'))
+        .setDescription('Wybierz kategorię rankingu (możesz też zmienić ją przyciskiem)')
+        .setDescriptionLocalizations(slashLocales('Pick a leaderboard category (the panel can switch it too)'))
         .setRequired(false)
         .addChoices(
           { name: '💰 Pieniądze', name_localizations: slashNameLocales('💰 Money'), value: 'money' },
           { name: '📊 Poziom', name_localizations: slashNameLocales('📊 Level'), value: 'level' },
           { name: '🎮 Liczba Gier', name_localizations: slashNameLocales('🎮 Games Played'), value: 'games' },
           { name: '🏆 Wygrane', name_localizations: slashNameLocales('🏆 Wins'), value: 'wins' },
-          { name: '🔥 Daily Streak', value: 'streak' }
-        )
+          { name: '🔥 Daily Streak', value: 'streak' },
+        ),
     ),
 
   async execute(interaction: ChatInputCommandInteraction) {
     const client = interaction.client as CasinoBot;
     const lang = await getUserLang(client.db, interaction.user.id);
-    const category = interaction.options.getString('kategoria') || 'money';
+    const category = parseTopCategory(interaction.options.getString('kategoria'));
 
     await interaction.deferReply();
 
     try {
-      // Get all users
-      const allUsers = await client.db.getAllUsers();
-
-      // Sort based on category
-      let sortedUsers;
-      let title = '';
-      let description = '';
-
-      switch (category) {
-        case 'money':
-          sortedUsers = allUsers.sort((a, b) => b.money - a.money);
-          title = t(lang, 'top_money');
-          description = t(lang, 'top_money_desc');
-          break;
-        case 'level':
-          sortedUsers = allUsers.sort((a, b) => (b.level || 1) - (a.level || 1) || (b.xp || 0) - (a.xp || 0));
-          title = t(lang, 'top_level');
-          description = t(lang, 'top_level_desc');
-          break;
-        case 'games':
-          sortedUsers = allUsers.sort((a, b) => (b.total_games || 0) - (a.total_games || 0));
-          title = t(lang, 'top_games');
-          description = t(lang, 'top_games_desc');
-          break;
-        case 'wins':
-          sortedUsers = allUsers.sort((a, b) => (b.total_wins || 0) - (a.total_wins || 0));
-          title = t(lang, 'top_wins');
-          description = t(lang, 'top_wins_desc');
-          break;
-        case 'streak':
-          sortedUsers = allUsers.sort((a, b) => (b.daily_streak || 0) - (a.daily_streak || 0));
-          title = t(lang, 'top_streak');
-          description = t(lang, 'top_streak_desc');
-          break;
-        default:
-          sortedUsers = allUsers.sort((a, b) => b.money - a.money);
-          title = t(lang, 'top_money');
-          description = t(lang, 'top_money_desc');
-      }
-
-      // Take top 10, fetch usernames in parallel
-      const topUsers = sortedUsers.slice(0, 10);
-
-      const usernameResults = await Promise.allSettled(
-        topUsers.map(u => client.users.fetch(u.user_id))
-      );
-
-      const embed = EmbedHelper.goldEmbed(title, description);
-
-      // Build leaderboard
-      let leaderboardText = '';
-      for (let i = 0; i < topUsers.length; i++) {
-        const user = topUsers[i];
-        const medal = i === 0 ? '🥇' : (i === 1 ? '🥈' : (i === 2 ? '🥉' : `${i + 1}.`));
-
-        const fetchResult = usernameResults[i];
-        const userInfo = fetchResult.status === 'fulfilled' ? fetchResult.value.username : `User ${user.user_id}`;
-
-        let statValue = '';
-        switch (category) {
-          case 'money':
-            statValue = `💵 $${user.money.toLocaleString()}`;
-            break;
-          case 'level':
-            const level = user.level || 1;
-            const xp = user.xp || 0;
-            const requiredXP = getRequiredXP(level);
-            statValue = `⭐ Lvl ${level} (${xp}/${requiredXP} XP)`;
-            break;
-          case 'games':
-            statValue = `🎮 ${(user.total_games || 0).toLocaleString()} gier`;
-            break;
-          case 'wins':
-            const wins = user.total_wins || 0;
-            const totalGames = user.total_games || 0;
-            const winRate = totalGames > 0 ? ((wins / totalGames) * 100).toFixed(1) : '0.0';
-            statValue = `✅ ${wins.toLocaleString()} wygranych (${winRate}%)`;
-            break;
-          case 'streak':
-            statValue = `🔥 ${(user.daily_streak || 0)} dni ${(user.daily_streak || 0) >= 7 ? '🏆' : ''}`;
-            break;
-        }
-
-        leaderboardText += `${medal} **${userInfo}**\n> ${statValue}\n\n`;
-      }
-
-      embed.addFields({
-        name: '🏅 Ranking',
-        value: leaderboardText || '*Brak danych*',
-        inline: false
-      });
-
-      // Find current user's position
-      const userPosition = sortedUsers.findIndex(u => u.user_id === interaction.user.id);
-      if (userPosition !== -1) {
-        const userData = sortedUsers[userPosition];
-        let userStat = '';
-        
-        switch (category) {
-          case 'money':
-            userStat = `$${userData.money.toLocaleString()}`;
-            break;
-          case 'level':
-            userStat = `Lvl ${userData.level || 1}`;
-            break;
-          case 'games':
-            userStat = `${(userData.total_games || 0).toLocaleString()} gier`;
-            break;
-          case 'wins':
-            userStat = `${(userData.total_wins || 0).toLocaleString()} wygranych`;
-            break;
-          case 'streak':
-            userStat = `${(userData.daily_streak || 0)} dni`;
-            break;
-        }
-
-        embed.setFooter({ 
-          text: t(lang, 'top_you')(userPosition + 1, userStat),
-          iconURL: interaction.user.displayAvatarURL()
-        });
-      }
-
-      await interaction.editReply({ embeds: [embed] });
+      const payload = await buildTopPayload(client, interaction.user.id, lang, category);
+      await interaction.editReply(payload);
     } catch (error) {
       console.error('Błąd top:', error);
       await interaction.editReply({ content: t(lang, 'error_generic') });

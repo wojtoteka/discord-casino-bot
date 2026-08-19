@@ -1,7 +1,10 @@
 ﻿import { Interaction } from 'discord.js';
 import { AdminBot } from '../../admin-bot';
 import { EmbedHelper } from '../../utils/helpers';
-import { ADMIN_ID, handleAdminButton } from '../../utils/adminShared';
+import { ADMIN_ID, getAdminDb, handleAdminButton } from '../../utils/adminShared';
+import { handleReportsPanel } from '../../utils/reportsPanel';
+import { handlePayoutsPanel } from '../../utils/payoutsPanel';
+import { handleAdminHub } from '../../utils/adminHub';
 
 function isAdminButton(customId: string): boolean {
   return customId.startsWith('admin_ok:')
@@ -9,10 +12,17 @@ function isAdminButton(customId: string): boolean {
     || customId.startsWith('admin_blk:');
 }
 
+/** Panels that keep all their state in the customId and handle their own routing. */
+const PANEL_HANDLERS = [
+  { prefix: 'admin_rep:', handle: handleReportsPanel },
+  { prefix: 'admin_pay:', handle: handlePayoutsPanel },
+  { prefix: 'admin_hub:', handle: handleAdminHub },
+] as const;
+
 export default {
   name: 'interactionCreate',
   async execute(interaction: Interaction) {
-    if (interaction.isButton()) {
+    if (interaction.isButton() || interaction.isStringSelectMenu()) {
       if (interaction.user.id !== ADMIN_ID) {
         await interaction.reply({
           embeds: [EmbedHelper.errorEmbed(
@@ -24,18 +34,25 @@ export default {
         return;
       }
 
-      if (!isAdminButton(interaction.customId)) return;
+      const panel = PANEL_HANDLERS.find(p => interaction.customId.startsWith(p.prefix));
+      if (!panel && !(interaction.isButton() && isAdminButton(interaction.customId))) {
+        return;
+      }
 
       try {
-        await handleAdminButton(interaction);
+        if (panel) {
+          await panel.handle(getAdminDb(interaction), interaction);
+        } else if (interaction.isButton()) {
+          await handleAdminButton(interaction);
+        }
       } catch (error) {
-        console.error('[ADMIN BOT] Błąd przycisku admina:', error);
+        console.error('[ADMIN BOT] Błąd komponentu admina:', error);
         const reply = {
           content: '❌ Wystąpił błąd podczas obsługi przycisku!',
           flags: 64,
         };
         if (interaction.replied || interaction.deferred) {
-          await interaction.followUp(reply);
+          await interaction.followUp(reply).catch(() => {});
         } else if (interaction.message) {
           await interaction.reply(reply).catch(() => {});
         }

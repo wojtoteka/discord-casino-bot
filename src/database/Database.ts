@@ -269,6 +269,18 @@ function normalizeReport(row: any): ReportRow {
   };
 }
 
+function normalizePayout(row: any): PayoutRow {
+  return {
+    id: Number(row.id) || 0,
+    user_id: String(row.user_id),
+    amount: Number(row.amount) || 0,
+    status: (PAYOUT_STATUSES.has(row.status) ? row.status : 'oczekuje') as PayoutStatus,
+    note: row.note ? String(row.note) : null,
+    admin_id: String(row.admin_id),
+    created_at: Number(row.created_at) || 0,
+  };
+}
+
 function invalidateGuildSettings(guildId: string): void {
   guildSettingsCache.delete(guildId);
 }
@@ -2023,8 +2035,10 @@ export class Database extends EventEmitter {
     type?: ReportType;
     status?: 'open' | 'all';
     limit?: number;
+    offset?: number;
   }): Promise<ReportRow[]> {
     const limit = Math.min(Math.max(1, Math.trunc(options?.limit ?? 10)), 25);
+    const offset = Math.max(0, Math.trunc(options?.offset ?? 0));
     const params: Array<string | number> = [];
     let sql = 'SELECT * FROM reports WHERE 1=1';
     if (options?.type && REPORT_TYPES.has(options.type)) {
@@ -2035,14 +2049,37 @@ export class Database extends EventEmitter {
       sql += ' AND status = ?';
       params.push('open');
     }
-    sql += ' ORDER BY created_at DESC LIMIT ?';
-    params.push(limit);
+    sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    params.push(limit, offset);
     try {
       const [rows] = await this.pool.execute(sql, params);
       return (rows as any[]).map(normalizeReport);
     } catch (error) {
       console.error('Błąd pobierania zgłoszeń:', error);
       return [];
+    }
+  }
+
+  public async countReports(options?: {
+    type?: ReportType;
+    status?: 'open' | 'all';
+  }): Promise<number> {
+    const params: Array<string | number> = [];
+    let sql = 'SELECT COUNT(*) AS total FROM reports WHERE 1=1';
+    if (options?.type && REPORT_TYPES.has(options.type)) {
+      sql += ' AND type = ?';
+      params.push(options.type);
+    }
+    if (options?.status !== 'all') {
+      sql += ' AND status = ?';
+      params.push('open');
+    }
+    try {
+      const [rows] = await this.pool.execute(sql, params);
+      return Number((rows as any[])[0]?.total) || 0;
+    } catch (error) {
+      console.error('Błąd liczenia zgłoszeń:', error);
+      return 0;
     }
   }
 
@@ -2313,8 +2350,13 @@ export class Database extends EventEmitter {
     return Number((result as mysql.ResultSetHeader).insertId) || 0;
   }
 
-  public async listPayouts(limit: number = 15, status?: PayoutStatus): Promise<PayoutRow[]> {
+  public async listPayouts(
+    limit: number = 15,
+    status?: PayoutStatus,
+    offset: number = 0,
+  ): Promise<PayoutRow[]> {
     const take = Math.min(Math.max(1, Math.trunc(limit) || 15), 25);
+    const skip = Math.max(0, Math.trunc(offset) || 0);
     try {
       const params: Array<string | number> = [];
       let sql = 'SELECT * FROM payouts WHERE 1=1';
@@ -2322,21 +2364,59 @@ export class Database extends EventEmitter {
         sql += ' AND status = ?';
         params.push(status);
       }
-      sql += ' ORDER BY created_at DESC LIMIT ?';
-      params.push(take);
+      sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+      params.push(take, skip);
       const [rows] = await this.pool.execute(sql, params);
-      return (rows as any[]).map(r => ({
-        id: Number(r.id) || 0,
-        user_id: String(r.user_id),
-        amount: Number(r.amount) || 0,
-        status: (PAYOUT_STATUSES.has(r.status) ? r.status : 'oczekuje') as PayoutStatus,
-        note: r.note ? String(r.note) : null,
-        admin_id: String(r.admin_id),
-        created_at: Number(r.created_at) || 0,
-      }));
+      return (rows as any[]).map(normalizePayout);
     } catch (error) {
       console.error('Błąd listy wypłat:', error);
       return [];
+    }
+  }
+
+  public async countPayouts(status?: PayoutStatus): Promise<number> {
+    try {
+      const params: Array<string | number> = [];
+      let sql = 'SELECT COUNT(*) AS total FROM payouts WHERE 1=1';
+      if (status && PAYOUT_STATUSES.has(status)) {
+        sql += ' AND status = ?';
+        params.push(status);
+      }
+      const [rows] = await this.pool.execute(sql, params);
+      return Number((rows as any[])[0]?.total) || 0;
+    } catch (error) {
+      console.error('Błąd liczenia wypłat:', error);
+      return 0;
+    }
+  }
+
+  public async getPayoutById(id: number): Promise<PayoutRow | null> {
+    const payoutId = Math.trunc(id);
+    if (!Number.isSafeInteger(payoutId) || payoutId < 1) return null;
+    try {
+      const [rows] = await this.pool.execute('SELECT * FROM payouts WHERE id = ? LIMIT 1', [payoutId]);
+      const row = (rows as any[])[0];
+      return row ? normalizePayout(row) : null;
+    } catch (error) {
+      console.error('Błąd pobierania wypłaty:', error);
+      return null;
+    }
+  }
+
+  /** Move a ledger entry to a new status. False when the id is unknown or already there. */
+  public async setPayoutStatus(id: number, status: PayoutStatus): Promise<boolean> {
+    const payoutId = Math.trunc(id);
+    if (!Number.isSafeInteger(payoutId) || payoutId < 1) return false;
+    if (!PAYOUT_STATUSES.has(status)) return false;
+    try {
+      const [result] = await this.pool.execute(
+        'UPDATE payouts SET status = ? WHERE id = ? AND status <> ?',
+        [status, payoutId, status],
+      );
+      return affectedRows(result) === 1;
+    } catch (error) {
+      console.error('Błąd zmiany statusu wypłaty:', error);
+      return false;
     }
   }
 

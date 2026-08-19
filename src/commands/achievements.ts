@@ -3,6 +3,7 @@ import { ChatInputCommandInteraction } from 'discord.js';
 import { CasinoBot } from '../index';
 import { EmbedHelper } from '../utils/helpers';
 import { ACHIEVEMENT_NAMES, formatAchievementReward } from '../utils/achievements';
+import { navRow } from '../utils/playerNav';
 import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
 
 export default {
@@ -67,7 +68,12 @@ export default {
       embed.setFooter({ text: t(lang, 'ach_footer') });
       embed.setTimestamp();
 
-      await interaction.editReply({ embeds: [embed] });
+      await interaction.editReply({
+        embeds: [embed],
+        components: [navRow(interaction.user.id, targetUser.id, lang, [
+          'profil', 'balance', 'questy',
+        ])],
+      });
     } catch (error) {
       console.error('Błąd achievementów:', error);
       await interaction.editReply({ content: t(lang, 'error_generic') });

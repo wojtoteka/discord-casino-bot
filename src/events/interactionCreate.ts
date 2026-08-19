@@ -1,4 +1,4 @@
-﻿import { Interaction, Collection, ActionRowBuilder, ButtonBuilder, StringSelectMenuInteraction, ButtonInteraction } from 'discord.js';
+﻿import { Interaction, Collection, ActionRowBuilder, ButtonBuilder, StringSelectMenuInteraction, ButtonInteraction, ChannelSelectMenuInteraction } from 'discord.js';
 import { CasinoBot, Command } from '../index';
 import { EmbedHelper } from '../utils/helpers';
 import { formatUsd, gameResultEmbed, pendingEmbed, pendingList, playAgainRow } from '../utils/embeds';
@@ -83,7 +83,7 @@ async function withTimeout<T>(
 
 // ── Component interaction router ────────────────────────────────
 async function handleComponentInteraction(
-  interaction: ButtonInteraction | StringSelectMenuInteraction,
+  interaction: ButtonInteraction | StringSelectMenuInteraction | ChannelSelectMenuInteraction,
   client: CasinoBot,
 ): Promise<void> {
   const lang = await getUserLang(client.db, interaction.user.id);
@@ -186,6 +186,26 @@ async function handleComponentInteraction(
       return;
     }
 
+    // gset:channel|clear|duels|refresh:<value>:<owner>:<ts> — /ustawienia-serwera panel
+    if (customId.startsWith('gset:')) {
+      const parts  = customId.split(':');
+      const action = parts[1];
+      const value  = parts[2];
+      const owner  = parts[3];
+      const ts     = parseInt(parts[4], 10);
+      const known = action === 'channel' || action === 'clear' || action === 'duels' || action === 'refresh';
+      if (parts.length < 5 || !known) return;
+      if (!(await guardComponent(interaction, owner, ts, lang))) return;
+      const { handleGuildSettingsComponent } = await import('../commands/ustawienia-serwera');
+      await handleGuildSettingsComponent(
+        interaction as ButtonInteraction | ChannelSelectMenuInteraction,
+        client,
+        action,
+        value,
+      );
+      return;
+    }
+
     // mines:<action>:<sessionId>[:pos]:<owner> — mines game tile reveal / cashout
     if (customId.startsWith('mines:')) {
       const parts = customId.split(':');
@@ -232,6 +252,34 @@ async function handleComponentInteraction(
         t(lang, 'quests_claim_success')(result.money, result.xp),
       );
       await interaction.reply({ embeds: [embed], flags: 64 });
+      return;
+    }
+
+    // top_menu:<owner>:<ts> — /top category picker
+    if (customId.startsWith('top_menu') && interaction.isStringSelectMenu()) {
+      const parts = customId.split(':');
+      const owner = parts[1];
+      const ts    = parseInt(parts[2], 10);
+      if (!(await guardComponent(interaction, owner, ts, lang))) return;
+      // Ranking needs every user row, so acknowledge before the query.
+      await interaction.deferUpdate();
+      const { buildTopPayload, parseTopCategory } = await import('../commands/top');
+      const category = parseTopCategory(interaction.values[0]);
+      await interaction.editReply(
+        await buildTopPayload(client, interaction.user.id, lang, category),
+      );
+      return;
+    }
+
+    // report_type:<reportedId|->:<owner>:<ts> — /zgłoszenie type picker → modal
+    if (customId.startsWith('report_type:') && interaction.isStringSelectMenu()) {
+      const parts = customId.split(':');
+      const reportedId = parts[1];
+      const owner      = parts[2];
+      const ts         = parseInt(parts[3], 10);
+      if (!(await guardComponent(interaction, owner, ts, lang))) return;
+      const { handleReportTypeSelect } = await import('../commands/zgloszenie');
+      await handleReportTypeSelect(interaction, client, reportedId);
       return;
     }
 
@@ -745,8 +793,21 @@ export default {
     }
 
     try {
+      // ── Modal submissions ───────────────────────────────────────
+      if (interaction.isModalSubmit()) {
+        if (interaction.customId.startsWith('report_form:')) {
+          const { handleReportModal } = await import('../commands/zgloszenie');
+          await handleReportModal(interaction, client);
+        }
+        return;
+      }
+
       // ── Button / SelectMenu interactions ────────────────────────
-      if (interaction.isButton() || interaction.isStringSelectMenu()) {
+      if (
+        interaction.isButton()
+        || interaction.isStringSelectMenu()
+        || interaction.isChannelSelectMenu()
+      ) {
         await handleComponentInteraction(interaction as any, client);
         return;
       }

@@ -1,4 +1,4 @@
-import { ButtonInteraction, StringSelectMenuInteraction } from 'discord.js';
+import { MessageComponentInteraction } from 'discord.js';
 import { EmbedHelper } from './helpers';
 import { t, type Lang } from '../i18n';
 
@@ -6,7 +6,7 @@ import { t, type Lang } from '../i18n';
  * Stateless ownership + expiry for router-handled message components.
  *
  * Every interactive customId handled by the central router (play_again, nav,
- * help_menu, quest_claim, mines, settings) carries the id of the player who
+ * help_menu, quest_claim, mines, settings, gset) carries the id of the player who
  * created the panel and the timestamp it was created at. This lets us, without
  * keeping any server-side state:
  *   1. reject clicks from other players (no more hijacking someone's embed), and
@@ -35,7 +35,7 @@ export function parseOwnerIds(ownerSegment: string | undefined): string[] {
  * (in which case an ephemeral message has already been sent).
  */
 export async function guardComponent(
-  interaction: ButtonInteraction | StringSelectMenuInteraction,
+  interaction: MessageComponentInteraction,
   ownerId: string | undefined,
   createdAt: number | undefined,
   lang: Lang = 'pl',

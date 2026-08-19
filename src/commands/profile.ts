@@ -4,6 +4,7 @@ import { CasinoBot } from '../index';
 import { EmbedHelper, getRequiredXP, getWarsawDateKey } from '../utils/helpers';
 import { ACHIEVEMENT_NAMES } from '../utils/achievements';
 import { asQuote, brandTitle, formatUsd, listLine } from '../utils/embeds';
+import { navRow } from '../utils/playerNav';
 import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
 import { DAILY } from '../config/constants';
 
@@ -106,7 +107,12 @@ export default {
       );
       embed.setThumbnail(targetUser.displayAvatarURL());
 
-      await interaction.editReply({ embeds: [embed] });
+      await interaction.editReply({
+        embeds: [embed],
+        components: [navRow(interaction.user.id, targetUser.id, lang, [
+          'balance', 'achievementy', 'ranking', 'questy',
+        ])],
+      });
     } catch (error) {
       console.error('Błąd profilu:', error);
       await interaction.editReply({ content: t(lang, 'profile_error') });
