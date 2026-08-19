@@ -8,6 +8,8 @@ import { formatAchievementNamesInline } from '../utils/achievements';
 import { withOwner } from '../utils/components';
 import { formatUsd, gameResultEmbed, pendingEmbed, pendingList, playAgainRow } from '../utils/embeds';
 import { InsufficientFundsError } from '../database/Database';
+import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
+import { withUserLock } from '../utils/moneyLock';
 
 const MIN_BET = (GAMES as { plinko?: { minBet?: number } }).plinko?.minBet ?? 100;
 const ROWS = 8;
@@ -37,15 +39,15 @@ function formatMult(mult: number): string {
   return `${mult}×`;
 }
 
-function dropFrame(bet: number, row: number, step: Step): string {
+function dropFrame(bet: number, row: number, step: Step, lang: 'pl' | 'en'): string {
   const width = row + 2;
   const cells = Array.from({ length: width }, (_, i) => (i === step.pos ? '🔴' : '🔹'));
   const arrow = step.dir === 'right' ? '↘️' : '↙️';
   return pendingList(
-    `${arrow} Piłka spada.`,
+    `${arrow} ${t(lang, 'plinko_dropping')}`,
     [
-      ['Zakład', formatUsd(bet)],
-      ['Rząd', `${row + 1}/${ROWS}`],
+      [t(lang, 'label_bet'), formatUsd(bet)],
+      [t(lang, 'plinko_row'), `${row + 1}/${ROWS}`],
     ],
     cells.join(' '),
   );
@@ -57,10 +59,13 @@ export default {
   data: new SlashCommandBuilder()
     .setName('plinko')
     .setDescription('🔴 Plinko — puść piłkę przez 8 rzędów kołków!')
+    .setDescriptionLocalizations(slashLocales('Plinko — drop a ball through 8 rows of pegs'))
     .addIntegerOption(option =>
       option
         .setName('zakład')
+        .setNameLocalizations(slashNameLocales('bet'))
         .setDescription(`Kwota do postawienia (min. $${MIN_BET.toLocaleString()})`)
+        .setDescriptionLocalizations(slashLocales(`Amount to bet (min. $${MIN_BET.toLocaleString()})`))
         .setRequired(true)
         .setMinValue(MIN_BET),
     ),
@@ -69,13 +74,14 @@ export default {
     const client = interaction.client as CasinoBot;
     const bet = interaction.options.getInteger('zakład', true);
     const userId = interaction.user.id;
+    const lang = await getUserLang(client.db, userId);
 
     const userData = await client.db.getUser(userId);
 
     if (!GameHelper.canAfford(userData.money, bet)) {
       const embed = EmbedHelper.errorEmbed(
-        '❌ Niewystarczające Środki',
-        `Potrzebujesz **$${bet.toLocaleString()}** ale masz tylko **$${userData.money.toLocaleString()}**`,
+        t(lang, 'insufficient_funds_title'),
+        t(lang, 'error_insufficient_funds')(bet, userData.money),
       );
       await interaction.reply({ embeds: [embed], flags: 64 });
       return;
@@ -84,12 +90,12 @@ export default {
     await interaction.deferReply();
 
     try {
-      await client.db.updateMoney(userId, -bet);
+      await withUserLock(userId, () => client.db.updateMoney(userId, -bet));
     } catch (error) {
       if (error instanceof InsufficientFundsError) {
         const embed = EmbedHelper.errorEmbed(
-          '❌ Niewystarczające Środki',
-          `Potrzebujesz **$${bet.toLocaleString()}** ale masz tylko **$${userData.money.toLocaleString()}**`,
+          t(lang, 'insufficient_funds_title'),
+          t(lang, 'error_insufficient_funds')(bet, userData.money),
         );
         await interaction.editReply({ embeds: [embed] });
         return;
@@ -102,44 +108,48 @@ export default {
     const winnings = Math.floor(bet * mult);
 
     for (let i = 0; i < ROWS; i++) {
-      const embed = pendingEmbed('Plinko', dropFrame(bet, i, steps[i]));
+      const embed = pendingEmbed(t(lang, 'plinko_title'), dropFrame(bet, i, steps[i], lang));
       await interaction.editReply({ embeds: [embed] });
       await sleep(180 + i * 40);
     }
 
     await sleep(280);
 
-    await client.db.updateMoney(userId, winnings);
-
     const isWin = winnings > bet;
     const outcome: 'win' | 'loss' = isWin ? 'win' : 'loss';
 
-    await client.db.recordGame(userId, 'plinko', bet, winnings, outcome);
-    await client.db.updateQuestProgress(userId, {
-      play_games: 1,
-      wager: bet,
-      ...(isWin ? { win_games: 1 } : {}),
+    await withUserLock(userId, async () => {
+      await client.db.updateMoney(userId, winnings);
+      await client.db.recordGame(userId, 'plinko', bet, winnings, outcome);
+      await client.db.updateQuestProgress(userId, {
+        play_games: 1,
+        wager: bet,
+        ...(isWin ? { win_games: 1 } : {}),
+      });
     });
     const newAchievements = await client.db.checkAchievements(userId);
     const newData = await client.db.getUser(userId);
 
-    const result = `Kubełek ${formatMult(mult)}`;
+    const result = t(lang, 'plinko_bucket')(formatMult(mult));
     const extra = newAchievements.length > 0
-      ? `Nowe osiągnięcia: ${formatAchievementNamesInline(newAchievements)}`
+      ? t(lang, 'new_achievements')(formatAchievementNamesInline(newAchievements)).trim()
       : undefined;
 
     const embed = gameResultEmbed({
-      title: 'Plinko',
+      title: t(lang, 'plinko_title'),
       won: isWin,
       bet,
       result,
       balance: newData.money,
       extra,
+      lang,
     });
 
     const row = playAgainRow({
       customIdPlayAgain: withOwner(`play_again:plinko:${bet}`, userId),
       customIdBalance: withOwner(`nav:balance:${userId}`, userId),
+      playAgainLabel: t(lang, 'btn_play_again'),
+      balanceLabel: t(lang, 'btn_balance'),
     });
 
     await interaction.editReply({ embeds: [embed], components: [row] });

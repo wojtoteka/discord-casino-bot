@@ -1,73 +1,62 @@
 ﻿import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction } from 'discord.js';
-import { CasinoBot } from '../../index';
 import { EmbedHelper } from '../../utils/helpers';
-
-const ADMIN_ID = '1328758394588500024';
+import { slashLocales, slashNameLocales } from '../../i18n';
+import {
+  buildUserInfoEmbed,
+  denyIfNotAdmin,
+  getAdminDb,
+  resolveTargetId,
+} from '../../utils/adminShared';
 
 export default {
   data: new SlashCommandBuilder()
     .setName('admin-info-uzytkownik')
+    .setNameLocalizations(slashNameLocales('admin-user-info'))
     .setDescription('[ADMIN] Wyświetl szczegółowe informacje o użytkowniku')
+    .setDescriptionLocalizations(slashLocales('[ADMIN] Show detailed info about a user'))
     .addUserOption(option =>
       option
         .setName('użytkownik')
+        .setNameLocalizations(slashNameLocales('user'))
         .setDescription('Użytkownik do sprawdzenia')
-        .setRequired(true)
+        .setDescriptionLocalizations(slashLocales('User to inspect'))
+        .setRequired(false)
+    )
+    .addStringOption(option =>
+      option
+        .setName('id')
+        .setNameLocalizations(slashNameLocales('id'))
+        .setDescription('Discord ID (gdy brak wzmianki)')
+        .setDescriptionLocalizations(slashLocales('Raw Discord user ID'))
+        .setRequired(false)
     ),
 
   async execute(interaction: ChatInputCommandInteraction) {
-    if (interaction.user.id !== ADMIN_ID) {
-      const embed = EmbedHelper.errorEmbed(
-        '🚫 Brak Dostępu',
-        'Nie masz uprawnień do używania tej komendy!\nTa komenda jest dostępna tylko dla administratora.'
-      );
-      await interaction.reply({ embeds: [embed], flags: 64 });
+    const denied = denyIfNotAdmin(interaction.user.id);
+    if (denied) {
+      await interaction.reply({ embeds: [denied], flags: 64 });
       return;
     }
 
-    const client = interaction.client as CasinoBot;
-    const targetUser = interaction.options.getUser('użytkownik', true);
+    const target = resolveTargetId(interaction);
+    if (!target.ok || !target.id) {
+      await interaction.reply({
+        embeds: [EmbedHelper.errorEmbed('❌ Błąd', target.ok ? 'Podaj użytkownika albo ID.' : target.message)],
+        flags: 64,
+      });
+      return;
+    }
 
     try {
-      const userData = await client.db.getUser(targetUser.id);
-      
-      let description = `**Użytkownik:** ${targetUser.username}\n`;
-      description += `**ID:** ${targetUser.id}\n\n`;
-      description += `💰 **Pieniądze:** $${userData.money.toLocaleString()}\n`;
-      description += `🎟️ **Kredyty:** ${userData.credits.toLocaleString()}\n\n`;
-      
-      if (userData.last_bonus > 0) {
-        const lastBonusDate = new Date(userData.last_bonus);
-        description += `🎁 **Ostatni bonus:** ${lastBonusDate.toLocaleString('pl-PL')}\n`;
-      } else {
-        description += `🎁 **Ostatni bonus:** Nigdy\n`;
-      }
-
-      if (userData.is_blocked) {
-        description += `\n🔒 **STATUS:** ZABLOKOWANY\n`;
-        description += `**Powód:** ${userData.blocked_reason || 'Brak powodu'}\n`;
-        if (userData.blocked_at) {
-          const blockedDate = new Date(userData.blocked_at);
-          description += `**Zablokowano:** ${blockedDate.toLocaleString('pl-PL')}\n`;
-        }
-      } else {
-        description += `\n✅ **STATUS:** Aktywny\n`;
-      }
-
-      const embed = EmbedHelper.infoEmbed(
-        '👤 Informacje o Użytkowniku',
-        description
-      );
-
+      const { embed } = await buildUserInfoEmbed(getAdminDb(interaction), interaction.client, target.id);
       await interaction.reply({ embeds: [embed], flags: 64 });
     } catch (error) {
       console.error('Błąd pobierania informacji o użytkowniku:', error);
-      const embed = EmbedHelper.errorEmbed(
-        '❌ Błąd',
-        'Wystąpił błąd podczas pobierania informacji o użytkowniku.'
-      );
-      await interaction.reply({ embeds: [embed], flags: 64 });
+      await interaction.reply({
+        embeds: [EmbedHelper.errorEmbed('❌ Błąd', 'Wystąpił błąd podczas pobierania informacji o użytkowniku.')],
+        flags: 64,
+      });
     }
   },
 };

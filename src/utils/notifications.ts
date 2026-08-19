@@ -57,7 +57,7 @@ async function flushAchievementQueue(client: Client, userId: string): Promise<vo
 
     const achievementList = achievementIds.map(id => {
       const info = getAchievementInfo(id);
-      return `》 ${info.emoji} **${info.name}**\n${asQuote(info.description)}`;
+      return `${info.emoji} **${info.name}**\n${asQuote(info.description)}`;
     }).join('\n');
 
     const embed = new EmbedBuilder()
@@ -87,9 +87,6 @@ export async function sendLevelUpDM(client: Client, userId: string, newLevel: nu
   try {
     const user = await client.users.fetch(userId);
 
-    const rewards: string[] = [];
-    if (newLevel % 5 === 0) rewards.push(`🎁 Bonus za poziom ${newLevel}: odblokowane nagrody.`);
-
     const embed = new EmbedBuilder()
       .setColor(COLORS.gold)
       .setTitle(brandTitle('Nowy poziom'))
@@ -97,8 +94,7 @@ export async function sendLevelUpDM(client: Client, userId: string, newLevel: nu
         `Awansowałeś na **poziom ${newLevel}**.\n\n` +
         `${listLine('Poziom', String(newLevel))}\n\n` +
         asQuote(
-          `Graj dalej, aby zdobywać XP.\nUżyj \`/profil\` aby zobaczyć postęp.`
-          + (rewards.length > 0 ? `\n${rewards.join('\n')}` : ''),
+          `Graj dalej, aby zdobywać XP.\nUżyj \`/profil\` aby zobaczyć postęp.`,
         ),
       )
       .setFooter({ text: BRAND.footerText })

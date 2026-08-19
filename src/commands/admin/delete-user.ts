@@ -1,66 +1,83 @@
 ﻿import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction } from 'discord.js';
-import { CasinoBot } from '../../index';
 import { EmbedHelper } from '../../utils/helpers';
-
-const ADMIN_ID = '1328758394588500024';
+import { slashLocales, slashNameLocales } from '../../i18n';
+import {
+  ADMIN_ID,
+  denyIfNotAdmin,
+  fetchUserLabel,
+  getAdminDb,
+  promptDeleteUser,
+  resolveTargetId,
+} from '../../utils/adminShared';
 
 export default {
   data: new SlashCommandBuilder()
     .setName('admin-usun-uzytkownika')
+    .setNameLocalizations(slashNameLocales('admin-delete-user'))
     .setDescription('[ADMIN] Usuń użytkownika z bazy danych')
+    .setDescriptionLocalizations(slashLocales('[ADMIN] Delete a user from the database'))
     .addUserOption(option =>
       option
         .setName('użytkownik')
+        .setNameLocalizations(slashNameLocales('user'))
         .setDescription('Użytkownik do usunięcia')
-        .setRequired(true)
+        .setDescriptionLocalizations(slashLocales('User to delete'))
+        .setRequired(false)
+    )
+    .addStringOption(option =>
+      option
+        .setName('id')
+        .setNameLocalizations(slashNameLocales('id'))
+        .setDescription('Discord ID (gdy brak wzmianki)')
+        .setDescriptionLocalizations(slashLocales('Raw Discord user ID'))
+        .setRequired(false)
     ),
 
   async execute(interaction: ChatInputCommandInteraction) {
-    if (interaction.user.id !== ADMIN_ID) {
-      const embed = EmbedHelper.errorEmbed(
-        '🚫 Brak Dostępu',
-        'Nie masz uprawnień do używania tej komendy!\nTa komenda jest dostępna tylko dla administratora.'
-      );
-      await interaction.reply({ embeds: [embed], flags: 64 });
+    const denied = denyIfNotAdmin(interaction.user.id);
+    if (denied) {
+      await interaction.reply({ embeds: [denied], flags: 64 });
       return;
     }
 
-    const client = interaction.client as CasinoBot;
-    const targetUser = interaction.options.getUser('użytkownik', true);
-
-    if (targetUser.id === ADMIN_ID) {
-      const embed = EmbedHelper.errorEmbed(
-        '❌ Błąd',
-        'Nie możesz usunąć samego siebie!'
-      );
-      await interaction.reply({ embeds: [embed], flags: 64 });
+    const target = resolveTargetId(interaction);
+    if (!target.ok || !target.id) {
+      await interaction.reply({
+        embeds: [EmbedHelper.errorEmbed('❌ Błąd', target.ok ? 'Podaj użytkownika albo ID.' : target.message)],
+        flags: 64,
+      });
       return;
     }
+
+    if (target.id === ADMIN_ID) {
+      await interaction.reply({
+        embeds: [EmbedHelper.errorEmbed('❌ Błąd', 'Nie możesz usunąć samego siebie!')],
+        flags: 64,
+      });
+      return;
+    }
+
+    const db = getAdminDb(interaction);
 
     try {
-      const userData = await client.db.getUser(targetUser.id);
-      
-      await client.db.deleteUser(targetUser.id);
+      const userData = await db.getUserIfExists(target.id);
+      if (!userData) {
+        await interaction.reply({
+          embeds: [EmbedHelper.errorEmbed('❌ Brak w bazie', `Użytkownik \`${target.id}\` nie istnieje w bazie.`)],
+          flags: 64,
+        });
+        return;
+      }
 
-      const embed = EmbedHelper.successEmbed(
-        '🗑️ Użytkownik Usunięty',
-        `**Użytkownik:** ${targetUser.username}\n` +
-        `**ID:** ${targetUser.id}\n\n` +
-        `**Utracone dane:**\n` +
-        `💰 Pieniądze: $${userData.money.toLocaleString()}\n` +
-        `🎟️ Kredyty: ${userData.credits.toLocaleString()}\n\n` +
-        `Użytkownik został całkowicie usunięty z bazy danych.`
-      );
-
-      await interaction.reply({ embeds: [embed], flags: 64 });
+      const label = await fetchUserLabel(interaction.client, target.id);
+      await promptDeleteUser(interaction, target.id, label, userData);
     } catch (error) {
       console.error('Błąd usuwania użytkownika:', error);
-      const embed = EmbedHelper.errorEmbed(
-        '❌ Błąd',
-        'Wystąpił błąd podczas usuwania użytkownika.'
-      );
-      await interaction.reply({ embeds: [embed], flags: 64 });
+      await interaction.reply({
+        embeds: [EmbedHelper.errorEmbed('❌ Błąd', 'Wystąpił błąd podczas przygotowywania usunięcia użytkownika.')],
+        flags: 64,
+      });
     }
   },
 };

@@ -7,6 +7,9 @@ import { formatAchievementNamesInline } from '../utils/achievements';
 import { withOwner } from '../utils/components';
 import { Deck, Card } from '../utils/games';
 import { formatUsd, gameResultEmbed, infoGameEmbed, pendingEmbed, pendingList, playAgainRow } from '../utils/embeds';
+import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
+import { InsufficientFundsError } from '../database/Database';
+import { withUserLock } from '../utils/moneyLock';
 
 function pokerPlayAgainRow(bet: number, userId: string) {
   return playAgainRow({
@@ -32,10 +35,13 @@ export default {
   data: new SlashCommandBuilder()
     .setName('poker')
     .setDescription('🃏 Zagraj w Texas Hold\'em Poker przeciwko krupierowi')
+    .setDescriptionLocalizations(slashLocales("Texas Hold'em vs the dealer"))
     .addIntegerOption(option =>
       option
         .setName('zakład')
+        .setNameLocalizations(slashNameLocales('bet'))
         .setDescription('Początkowy zakład (min. $500)')
+        .setDescriptionLocalizations(slashLocales('Opening bet (min. $500)'))
         .setRequired(true)
         .setMinValue(500)
     ),
@@ -45,12 +51,13 @@ export default {
     const bet = interaction.options.getInteger('zakład', true);
     const userId = interaction.user.id;
     
+    const lang = await getUserLang(client.db, userId);
     const userData = await client.db.getUser(userId);
 
     if (!GameHelper.canAfford(userData.money, bet * 2)) {
       const embed = EmbedHelper.errorEmbed(
-        '❌ Niewystarczające środki',
-        `Potrzebujesz co najmniej **$${(bet * 2).toLocaleString()}** aby grać w pokera\n(zakład początkowy + rezerwa na licytację)\n\nMasz: **$${userData.money.toLocaleString()}**`
+        t(lang, 'insufficient_funds_title'),
+        t(lang, 'poker_need')(bet * 2, userData.money),
       );
       await interaction.reply({ embeds: [embed], flags: 64 });
       return;
@@ -58,8 +65,8 @@ export default {
 
     if (activeGames.has(userId)) {
       const embed = EmbedHelper.warningEmbed(
-        '⚠️ Gra w toku',
-        'Dokończ obecną grę w pokera zanim zaczniesz nową.'
+        t(lang, 'game_in_progress_title'),
+        t(lang, 'game_in_progress'),
       );
       await interaction.reply({ embeds: [embed], flags: 64 });
       return;
@@ -82,7 +89,23 @@ export default {
     };
 
     activeGames.set(userId, game);
-    await client.db.updateMoney(userId, -bet);
+    try {
+      await withUserLock(userId, () => client.db.updateMoney(userId, -bet));
+    } catch (error) {
+      activeGames.delete(userId);
+      if (error instanceof InsufficientFundsError) {
+        const latest = await client.db.getUser(userId);
+        await interaction.reply({
+          embeds: [EmbedHelper.errorEmbed(
+            t(lang, 'insufficient_funds_title'),
+            t(lang, 'error_insufficient_funds')(bet, latest.money),
+          )],
+          flags: 64,
+        });
+        return;
+      }
+      throw error;
+    }
 
     const embed = createPokerEmbed(game, false);
     const buttons = createPokerButtons(game);
@@ -97,6 +120,7 @@ export default {
     });
 
     collector?.on('collect', async (buttonInteraction: any) => {
+      try {
       const game = activeGames.get(userId);
       if (!game) return;
 
@@ -155,14 +179,26 @@ export default {
         
         const currentUserData = await client.db.getUser(userId);
         if (!GameHelper.canAfford(currentUserData.money, raiseAmount)) {
-          await buttonInteraction.reply({ 
-            content: `❌ Nie masz wystarczających środków na podbicie! Potrzebujesz **$${raiseAmount.toLocaleString()}**`, 
-            flags: 64 
+          await buttonInteraction.reply({
+            content: t(lang, 'poker_raise_broke')(raiseAmount),
+            flags: 64,
           });
           return;
         }
 
-        await client.db.updateMoney(userId, -raiseAmount);
+        try {
+          await withUserLock(userId, () => client.db.updateMoney(userId, -raiseAmount));
+        } catch (error) {
+          if (error instanceof InsufficientFundsError) {
+            const latest = await client.db.getUser(userId);
+            await buttonInteraction.reply({
+              content: t(lang, 'poker_raise_broke')(raiseAmount),
+              flags: 64,
+            });
+            return;
+          }
+          throw error;
+        }
         game.pot += raiseAmount;
         game.playerBet += raiseAmount;
         game.currentBet += raiseAmount;
@@ -175,18 +211,31 @@ export default {
         const updatedButtons = createPokerButtons(game);
         await buttonInteraction.update({ embeds: [updatedEmbed], components: [updatedButtons] });
       }
+      } catch (error) {
+        if (error instanceof InsufficientFundsError) {
+          await buttonInteraction.reply({
+            content: t(lang, 'poker_raise_broke')(error.needed),
+            flags: 64,
+          }).catch(() => {});
+          return;
+        }
+        throw error;
+      }
     });
 
-    collector?.on('end', async (collected, reason) => {
+    collector?.on('end', async (_collected, reason) => {
       if (reason === 'time' && activeGames.has(userId)) {
+        const g = activeGames.get(userId);
+        const lostBet = g?.playerBet ?? bet;
         activeGames.delete(userId);
+        await withUserLock(userId, () => client.db.recordGame(userId, 'poker', lostBet, 0, 'loss')).catch(() => {});
         const timeoutEmbed = EmbedHelper.warningEmbed(
-          'Poker',
-          `Czas minął (3 minuty).\nZakład **$${bet.toLocaleString()}** przepadł.`
+          t(lang, 'poker_title'),
+          t(lang, 'poker_timeout')(lostBet),
         );
         try {
           await interaction.editReply({ embeds: [timeoutEmbed], components: [pokerPlayAgainRow(bet, userId)] });
-        } catch (error) {
+        } catch {
           // Ignore
         }
       } else {

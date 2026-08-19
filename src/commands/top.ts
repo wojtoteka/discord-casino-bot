@@ -1,28 +1,33 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction } from 'discord.js';
 import { CasinoBot } from '../index';
-import { EmbedHelper } from '../utils/helpers';
+import { EmbedHelper, getRequiredXP } from '../utils/helpers';
+import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
 
 export default {
   data: new SlashCommandBuilder()
     .setName('top')
     .setDescription('📊 Zobacz ranking graczy')
+    .setDescriptionLocalizations(slashLocales('View player leaderboards'))
     .addStringOption(option =>
       option
         .setName('kategoria')
+        .setNameLocalizations(slashNameLocales('category'))
         .setDescription('Wybierz kategorię rankingu')
+        .setDescriptionLocalizations(slashLocales('Pick a leaderboard category'))
         .setRequired(false)
         .addChoices(
-          { name: '💰 Pieniądze', value: 'money' },
-          { name: '📊 Poziom', value: 'level' },
-          { name: '🎮 Liczba Gier', value: 'games' },
-          { name: '🏆 Wygrane', value: 'wins' },
+          { name: '💰 Pieniądze', name_localizations: slashNameLocales('💰 Money'), value: 'money' },
+          { name: '📊 Poziom', name_localizations: slashNameLocales('📊 Level'), value: 'level' },
+          { name: '🎮 Liczba Gier', name_localizations: slashNameLocales('🎮 Games Played'), value: 'games' },
+          { name: '🏆 Wygrane', name_localizations: slashNameLocales('🏆 Wins'), value: 'wins' },
           { name: '🔥 Daily Streak', value: 'streak' }
         )
     ),
 
   async execute(interaction: ChatInputCommandInteraction) {
     const client = interaction.client as CasinoBot;
+    const lang = await getUserLang(client.db, interaction.user.id);
     const category = interaction.options.getString('kategoria') || 'money';
 
     await interaction.deferReply();
@@ -39,33 +44,33 @@ export default {
       switch (category) {
         case 'money':
           sortedUsers = allUsers.sort((a, b) => b.money - a.money);
-          title = '💰 Top Graczy - Pieniądze';
-          description = 'Ranking według ilości pieniędzy';
+          title = t(lang, 'top_money');
+          description = t(lang, 'top_money_desc');
           break;
         case 'level':
           sortedUsers = allUsers.sort((a, b) => (b.level || 1) - (a.level || 1) || (b.xp || 0) - (a.xp || 0));
-          title = '📊 Top Graczy - Poziom';
-          description = 'Ranking według poziomu i XP';
+          title = t(lang, 'top_level');
+          description = t(lang, 'top_level_desc');
           break;
         case 'games':
           sortedUsers = allUsers.sort((a, b) => (b.total_games || 0) - (a.total_games || 0));
-          title = '🎮 Top Graczy - Liczba Gier';
-          description = 'Ranking według liczby rozegranych gier';
+          title = t(lang, 'top_games');
+          description = t(lang, 'top_games_desc');
           break;
         case 'wins':
           sortedUsers = allUsers.sort((a, b) => (b.total_wins || 0) - (a.total_wins || 0));
-          title = '🏆 Top Graczy - Wygrane';
-          description = 'Ranking według liczby wygranych gier';
+          title = t(lang, 'top_wins');
+          description = t(lang, 'top_wins_desc');
           break;
         case 'streak':
           sortedUsers = allUsers.sort((a, b) => (b.daily_streak || 0) - (a.daily_streak || 0));
-          title = '🔥 Top Graczy - Daily Streak';
-          description = 'Ranking według najdłuższych streakow';
+          title = t(lang, 'top_streak');
+          description = t(lang, 'top_streak_desc');
           break;
         default:
           sortedUsers = allUsers.sort((a, b) => b.money - a.money);
-          title = '💰 Top Graczy - Pieniądze';
-          description = 'Ranking według ilości pieniędzy';
+          title = t(lang, 'top_money');
+          description = t(lang, 'top_money_desc');
       }
 
       // Take top 10, fetch usernames in parallel
@@ -94,7 +99,7 @@ export default {
           case 'level':
             const level = user.level || 1;
             const xp = user.xp || 0;
-            const requiredXP = Math.floor(100 * Math.pow(level, 1.5));
+            const requiredXP = getRequiredXP(level);
             statValue = `⭐ Lvl ${level} (${xp}/${requiredXP} XP)`;
             break;
           case 'games':
@@ -145,7 +150,7 @@ export default {
         }
 
         embed.setFooter({ 
-          text: `Twoja pozycja: #${userPosition + 1} | ${userStat}`,
+          text: t(lang, 'top_you')(userPosition + 1, userStat),
           iconURL: interaction.user.displayAvatarURL()
         });
       }
@@ -153,7 +158,7 @@ export default {
       await interaction.editReply({ embeds: [embed] });
     } catch (error) {
       console.error('Błąd top:', error);
-      await interaction.editReply({ content: '❌ Błąd podczas pobierania rankingu!' });
+      await interaction.editReply({ content: t(lang, 'error_generic') });
     }
   },
 };

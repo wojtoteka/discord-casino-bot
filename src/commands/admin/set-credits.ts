@@ -1,63 +1,69 @@
 ﻿import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction } from 'discord.js';
-import { CasinoBot } from '../../index';
 import { EmbedHelper } from '../../utils/helpers';
-
-const ADMIN_ID = '1328758394588500024';
+import { slashLocales, slashNameLocales } from '../../i18n';
+import { denyIfNotAdmin, runMoneyChange } from '../../utils/adminShared';
 
 export default {
   data: new SlashCommandBuilder()
     .setName('admin-ustaw-kredyty')
+    .setNameLocalizations(slashNameLocales('admin-set-credits'))
     .setDescription('[ADMIN] Ustaw dokładną ilość kredytów użytkownikowi')
+    .setDescriptionLocalizations(slashLocales('[ADMIN] Set an exact credit amount for a user'))
     .addUserOption(option =>
       option
         .setName('użytkownik')
+        .setNameLocalizations(slashNameLocales('user'))
         .setDescription('Użytkownik')
+        .setDescriptionLocalizations(slashLocales('User'))
         .setRequired(true)
     )
     .addIntegerOption(option =>
       option
         .setName('ilość')
+        .setNameLocalizations(slashNameLocales('amount'))
         .setDescription('Nowa ilość kredytów')
+        .setDescriptionLocalizations(slashLocales('New credit amount'))
         .setRequired(true)
         .setMinValue(0)
+    )
+    .addStringOption(option =>
+      option
+        .setName('powód')
+        .setNameLocalizations(slashNameLocales('reason'))
+        .setDescription('Powód zmiany')
+        .setDescriptionLocalizations(slashLocales('Reason for the change'))
+        .setRequired(true)
+        .setMaxLength(200)
     ),
 
   async execute(interaction: ChatInputCommandInteraction) {
-    if (interaction.user.id !== ADMIN_ID) {
-      const embed = EmbedHelper.errorEmbed(
-        '🚫 Brak Dostępu',
-        'Nie masz uprawnień do używania tej komendy!\nTa komenda jest dostępna tylko dla administratora.'
-      );
-      await interaction.reply({ embeds: [embed], flags: 64 });
+    const denied = denyIfNotAdmin(interaction.user.id);
+    if (denied) {
+      await interaction.reply({ embeds: [denied], flags: 64 });
       return;
     }
 
-    const client = interaction.client as CasinoBot;
     const targetUser = interaction.options.getUser('użytkownik', true);
     const amount = interaction.options.getInteger('ilość', true);
+    const reason = interaction.options.getString('powód', true);
 
     try {
-      const userData = await client.db.getUser(targetUser.id);
-      const oldCredits = userData.credits;
-      
-      await client.db.setCredits(targetUser.id, amount);
-
-      const embed = EmbedHelper.successEmbed(
-        '✅ Kredyty Ustawione',
-        `**Użytkownik:** ${targetUser.username}\n\n` +
-        `**Poprzednie kredyty:** ${oldCredits.toLocaleString()}\n` +
-        `**Nowe kredyty:** ${amount.toLocaleString()}`
-      );
-
-      await interaction.reply({ embeds: [embed], flags: 64 });
+      await runMoneyChange(interaction, {
+        op: 'set-credits',
+        targetId: targetUser.id,
+        targetLabel: targetUser.username,
+        amount,
+        reason,
+      });
     } catch (error) {
       console.error('Błąd ustawiania kredytów:', error);
-      const embed = EmbedHelper.errorEmbed(
-        '❌ Błąd',
-        'Wystąpił błąd podczas ustawiania kredytów.'
-      );
-      await interaction.reply({ embeds: [embed], flags: 64 });
+      const embed = EmbedHelper.errorEmbed('❌ Błąd', 'Wystąpił błąd podczas ustawiania kredytów.');
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp({ embeds: [embed], flags: 64 });
+      } else {
+        await interaction.reply({ embeds: [embed], flags: 64 });
+      }
     }
   },
 };

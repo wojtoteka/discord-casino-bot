@@ -3,17 +3,20 @@ import { ChatInputCommandInteraction, ActionRowBuilder, ButtonBuilder, ButtonSty
 import { CasinoBot } from '../index';
 import { EmbedHelper } from '../utils/helpers';
 import { withOwner } from '../utils/components';
-import { getUserLang, t } from '../i18n';
+import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
 import { brandTitle, formatUsd, listLine, asQuote } from '../utils/embeds';
 
 export default {
   data: new SlashCommandBuilder()
     .setName('balance')
     .setDescription('💰 Sprawdź swój aktualny balans')
+    .setDescriptionLocalizations(slashLocales('Check your current balance'))
     .addUserOption(option =>
       option
         .setName('użytkownik')
+        .setNameLocalizations(slashNameLocales('user'))
         .setDescription('Sprawdź balans innego użytkownika')
+        .setDescriptionLocalizations(slashLocales('Check another player balance'))
         .setRequired(false)
     ),
 
@@ -38,13 +41,13 @@ export default {
     const embed = EmbedHelper.infoEmbed(
       brandTitle('Saldo'),
       `Saldo gracza **${targetUser.username}**.\n\n` +
-      `${listLine('Pieniądze', formatUsd(userData.money))}\n` +
-      `${listLine('Kredyty', String(userData.credits))}\n` +
-      `${listLine('Poziom', String(level))}\n` +
-      `${listLine('Seria', `${userData.daily_streak || 0} dni`)}\n` +
-      `${listLine('Gry', String(userData.total_games || 0))}\n` +
-      `${listLine('Wygrane', String(userData.total_wins || 0))}\n` +
-      `${listLine('Skuteczność', `${winRate}%`)}\n\n` +
+      `${listLine(t(lang, 'profile_money'), formatUsd(userData.money))}\n` +
+      `${listLine(t(lang, 'profile_credits'), String(userData.credits))}\n` +
+      `${listLine(t(lang, 'profile_level'), String(level))}\n` +
+      `${listLine(t(lang, 'profile_streak'), `${userData.daily_streak || 0}`)}\n` +
+      `${listLine(t(lang, 'profile_played'), String(userData.total_games || 0))}\n` +
+      `${listLine(t(lang, 'profile_wins'), String(userData.total_wins || 0))}\n` +
+      `${listLine(t(lang, 'profile_winrate'), `${winRate}%`)}\n\n` +
       `${xpBar} **${xpPercent}%**\n` +
       asQuote(`${xp.toLocaleString()} / ${requiredXP.toLocaleString()} XP\n${t(lang, 'balance_tip')}`),
     );

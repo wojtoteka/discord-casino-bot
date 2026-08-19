@@ -3,7 +3,7 @@ import { ChatInputCommandInteraction, ActionRowBuilder, ButtonBuilder, ButtonSty
 import { CasinoBot } from '../index';
 import { EmbedHelper } from '../utils/helpers';
 import { withOwner } from '../utils/components';
-import { getUserLang, t } from '../i18n';
+import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
 
 function progressBar(current: number, target: number, length = 10): string {
   const pct    = Math.min(current / target, 1);
@@ -14,7 +14,9 @@ function progressBar(current: number, target: number, length = 10): string {
 export default {
   data: new SlashCommandBuilder()
     .setName('questy')
-    .setDescription('🎯 Sprawdź swoje dzienne questy i odbierz nagrody!'),
+    .setNameLocalizations(slashNameLocales('quests'))
+    .setDescription('🎯 Sprawdź swoje dzienne questy i odbierz nagrody!')
+    .setDescriptionLocalizations(slashLocales('Check daily quests and claim rewards')),
 
   async execute(interaction: ChatInputCommandInteraction) {
     const client = interaction.client as CasinoBot;
@@ -58,8 +60,8 @@ export default {
           value:
             `${bar} ${progStr}\n` +
             (done
-              ? (canClaim ? `**${t(lang, 'quests_reward')(quest.reward_money, quest.reward_xp)}** ← odbierz!` : t(lang, 'quests_completed'))
-              : `Nagroda: ${t(lang, 'quests_reward')(quest.reward_money, quest.reward_xp)}`),
+              ? (canClaim ? `**${t(lang, 'quests_reward')(quest.reward_money, quest.reward_xp)}** ${t(lang, 'quests_claim_hint')}` : t(lang, 'quests_completed'))
+              : `${t(lang, 'quests_reward_prefix')} ${t(lang, 'quests_reward')(quest.reward_money, quest.reward_xp)}`),
           inline: false,
         });
       }

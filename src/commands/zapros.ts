@@ -2,13 +2,15 @@ import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { CasinoBot } from '../index';
 import { EmbedHelper } from '../utils/helpers';
-import { getUserLang, t } from '../i18n';
+import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
 import { INVITE, TOP_GG } from '../config/constants';
 
 export default {
   data: new SlashCommandBuilder()
     .setName('zapros')
-    .setDescription('🔗 Zaproś RoyalCasino na swój serwer!'),
+    .setNameLocalizations(slashNameLocales('invite'))
+    .setDescription('🔗 Zaproś RoyalCasino na swój serwer!')
+    .setDescriptionLocalizations(slashLocales('Invite RoyalCasino to your server')),
 
   async execute(interaction: ChatInputCommandInteraction) {
     const client = interaction.client as CasinoBot;
@@ -19,12 +21,7 @@ export default {
     const embed = EmbedHelper.goldEmbed(
       t(lang, 'invite_title'),
       t(lang, 'invite_desc') +
-      '\n\n**🎰 Funkcje:**\n' +
-      '> 🃏 Blackjack, Poker, Ruletka, Plinko, Limbo, Pojedynek\n' +
-      '> 💣 Miny, Crash, HiLo\n' +
-      '> 🏆 Turnieje, Questy, Osiągnięcia\n' +
-      '> 📊 Statystyki, Ranking, Profil\n' +
-      '> 🔔 Powiadomienia DM',
+      '\n\n' + t(lang, 'invite_features'),
     );
 
     embed.setFooter({ text: '🎰 RoyalCasino · Dołącz do graczy' });

@@ -3,6 +3,8 @@ import { ChatInputCommandInteraction } from 'discord.js';
 import { CasinoBot } from '../index';
 import { EmbedHelper } from '../utils/helpers';
 import { formatAchievementNamesLines } from '../utils/achievements';
+import { getUserLang, slashLocales, t } from '../i18n';
+import { listLine } from '../utils/embeds';
 
 function getTimeUntilWarsawMidnight(): { hours: number; minutes: number } {
   const parts = new Intl.DateTimeFormat('pl-PL', {
@@ -29,50 +31,56 @@ function getTimeUntilWarsawMidnight(): { hours: number; minutes: number } {
 export default {
   data: new SlashCommandBuilder()
     .setName('daily')
-    .setDescription('🎁 Odbierz dzienny bonus ze streakiem!'),
+    .setDescription('🎁 Odbierz dzienny bonus ze streakiem!')
+    .setDescriptionLocalizations(slashLocales('Claim your daily bonus and streak')),
 
   async execute(interaction: ChatInputCommandInteraction) {
     const client = interaction.client as CasinoBot;
     const userId = interaction.user.id;
-    
+    const lang = await getUserLang(client.db, userId);
+
     try {
       const result = await client.db.claimDaily(userId);
-      
+
       if (!result.canClaim) {
         const { hours, minutes } = getTimeUntilWarsawMidnight();
-        
         const embed = EmbedHelper.warningEmbed(
-          '⏰ Bonus już odebrany',
-          `Możesz odebrać kolejny bonus za: **${hours}h ${minutes}min**\n\n` +
-          `🔥 Obecna seria: **${result.streak} dni**`
+          t(lang, 'daily_already_claimed'),
+          [
+            t(lang, 'daily_wait')(hours, minutes),
+            '',
+            t(lang, 'daily_streak_current')(result.streak),
+          ].join('\n'),
         );
         await interaction.reply({ embeds: [embed], flags: 64 });
         return;
       }
 
-      // Check for achievements
       const newAchievements = await client.db.checkAchievements(userId);
-
       let achievementText = '';
       if (newAchievements.length > 0) {
-        achievementText = `\n\n🏆 × **Nowe osiągnięcia**\n${formatAchievementNamesLines(newAchievements)}`;
+        achievementText = t(lang, 'new_achievements')(formatAchievementNamesLines(newAchievements));
       }
 
       const embed = EmbedHelper.successEmbed(
-        '🎁 Bonus odebrany',
-        `Otrzymałeś **$${result.reward.toLocaleString()}**.\n\n` +
-        `🔥 **Seria:** ${result.streak} dni ${result.streak >= 7 ? '🏆' : ''}\n` +
-        `${result.streak < 7 ? `Wróć jutro, aby kontynuować serię (max bonus przy 7 dniach).` : `Maksymalny bonus osiągnięty.`}` +
-        achievementText
+        t(lang, 'daily_claimed'),
+        [
+          t(lang, 'daily_reward')(result.reward),
+          result.bonusPercent ? t(lang, 'daily_event_bonus')(result.bonusPercent) : '',
+          '',
+          listLine(t(lang, 'daily_streak')(result.streak).replace(/\*\*/g, ''), String(result.streak)),
+          result.streak < 7 ? t(lang, 'daily_streak_tip') : t(lang, 'daily_streak_max'),
+          achievementText,
+        ].filter(Boolean).join('\n'),
       );
 
       const userData = await client.db.getUser(userId);
-      embed.setFooter({ text: `Nowe saldo: $${userData.money.toLocaleString()} | Reset daily: 00:00 (Warszawa)` });
+      embed.setFooter({ text: t(lang, 'daily_footer')(userData.money) });
 
       await interaction.reply({ embeds: [embed] });
     } catch (error) {
       console.error('Błąd daily:', error);
-      const embed = EmbedHelper.errorEmbed('❌ Błąd', 'Nie udało się odebrać bonusu!');
+      const embed = EmbedHelper.errorEmbed(t(lang, 'error_title'), t(lang, 'daily_error'));
       await interaction.reply({ embeds: [embed], flags: 64 });
     }
   },

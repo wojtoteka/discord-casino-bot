@@ -3,10 +3,29 @@ import { CasinoBot, Command } from '../index';
 import { EmbedHelper } from '../utils/helpers';
 import { formatUsd, gameResultEmbed, pendingEmbed, pendingList, playAgainRow } from '../utils/embeds';
 import { guardComponent, withOwner } from '../utils/components';
-import { getUserLang, t } from '../i18n';
+import { getUserLang, t, type Lang } from '../i18n';
 import { COOLDOWNS, GAMES, MAX_BET } from '../config/constants';
 import { withUserLock } from '../utils/moneyLock';
 import { InsufficientFundsError } from '../database/Database';
+import { readGuildSettings, restrictedCasinoChannelId } from '../utils/guildGate';
+
+const MAINTENANCE_ALLOWED = new Set([
+  'pomoc',
+  'ustawienia',
+  'zgłoszenie',
+  'ustawienia-serwera',
+]);
+
+const FROZEN_COMMANDS = new Set([
+  'blackjack', 'coinflip', 'dice', 'ruletka', 'crash', 'war', 'hilo',
+  'slots', 'poker', 'miny', 'zdrapka', 'kolo', 'keno', 'plinko', 'limbo',
+  'pojedynek', 'kup-kredyty', 'sprzedaj-kredyty',
+]);
+
+function formatLimitUntil(ms: number): string {
+  if (!ms || !Number.isFinite(ms)) return '—';
+  return `<t:${Math.floor(ms / 1000)}:R>`;
+}
 
 // Cooldown system: Map<commandName, Map<userId, timestamp>>
 const cooldowns = new Collection<string, Collection<string, number>>();
@@ -71,17 +90,67 @@ async function handleComponentInteraction(
   const customId = interaction.customId;
 
   try {
+    const gatedComponent =
+      customId.startsWith('play_again:')
+      || customId.startsWith('mines:')
+      || customId.startsWith('duel:')
+      || customId.startsWith('quest_claim:');
+    if (gatedComponent) {
+      try {
+        if (await client.db.isMaintenance()) {
+          await interaction.reply({
+            embeds: [EmbedHelper.errorEmbed(t(lang, 'maintenance_title'), t(lang, 'maintenance'))],
+            flags: 64,
+          });
+          return;
+        }
+      } catch {}
+    }
+    if (
+      customId.startsWith('play_again:')
+      || customId.startsWith('mines:')
+      || customId.startsWith('duel:')
+    ) {
+      try {
+        if (await client.db.isUserFrozen(interaction.user.id)) {
+          await interaction.reply({
+            embeds: [EmbedHelper.errorEmbed(t(lang, 'frozen_title'), t(lang, 'frozen'))],
+            flags: 64,
+          });
+          return;
+        }
+      } catch {}
+    }
+
     // play_again:<game>:<bet>[:extra]:<owner>:<ts> — re-run a game inline
     if (customId.startsWith('play_again:')) {
       const parts = customId.split(':');
       const game  = parts[1];
       const bet   = parseInt(parts[2], 10);
       const ts    = parseInt(parts[parts.length - 1], 10);
-      const owner = parts[parts.length - 2];
-      // extra (choice/guess/type/mines) is present only when there's an extra segment
-      const extra = parts.length > 5 ? parts[3] : undefined;
 
-      if (!(await guardComponent(interaction as ButtonInteraction, owner, ts))) return;
+      // Duel rematch: play_again:pojedynek:<bet>:<opponentId>:<challengerId>:<ts>
+      // Both players may click; extra becomes "the other person".
+      if (game === 'pojedynek' && parts.length === 6) {
+        const originalOpponent = parts[3];
+        const originalChallenger = parts[4];
+        if (!(await guardComponent(
+          interaction as ButtonInteraction,
+          `${originalChallenger},${originalOpponent}`,
+          ts,
+          lang,
+        ))) return;
+        const rematchTarget = interaction.user.id === originalChallenger
+          ? originalOpponent
+          : originalChallenger;
+        await handlePlayAgain(interaction as ButtonInteraction, client, game, bet, rematchTarget);
+        return;
+      }
+
+      const owner = parts[parts.length - 2];
+      const extra = parts.length > 5 ? parts.slice(3, parts.length - 2).join(':') : undefined;
+
+      if (!(await guardComponent(interaction as ButtonInteraction, owner, ts, lang))) return;
       await handlePlayAgain(interaction as ButtonInteraction, client, game, bet, extra);
       return;
     }
@@ -90,11 +159,30 @@ async function handleComponentInteraction(
     if (customId.startsWith('nav:')) {
       const parts    = customId.split(':');
       const target   = parts[1];
-      const targetId = parts[2] || interaction.user.id;
+      const targetIdRaw = parts[2] || interaction.user.id;
       const owner    = parts[3];
       const ts       = parseInt(parts[4], 10);
-      if (!(await guardComponent(interaction as ButtonInteraction, owner, ts))) return;
+      if (!(await guardComponent(interaction as ButtonInteraction, owner, ts, lang))) return;
+      const targetId = targetIdRaw === 'self' ? interaction.user.id : targetIdRaw;
       await handleNavigation(interaction as ButtonInteraction, client, target, targetId);
+      return;
+    }
+
+    // settings:lang|duel:<pl|en|0|1>:<owner>:<ts>
+    if (customId.startsWith('settings:')) {
+      const parts = customId.split(':');
+      const action = parts[1];
+      const value  = parts[2];
+      const owner  = parts[3];
+      const ts     = parseInt(parts[4], 10);
+      const validLang = action === 'lang' && (value === 'pl' || value === 'en');
+      const validDuel = action === 'duel' && (value === '0' || value === '1');
+      if (parts.length < 5 || (!validLang && !validDuel)) {
+        return;
+      }
+      if (!(await guardComponent(interaction as ButtonInteraction, owner, ts, lang))) return;
+      const { handleSettingsButton } = await import('../commands/ustawienia');
+      await handleSettingsButton(interaction as ButtonInteraction, client, action, value);
       return;
     }
 
@@ -106,7 +194,7 @@ async function handleComponentInteraction(
       const owner     = parts[parts.length - 1];
       const pos       = action === 'reveal' ? parseInt(parts[3], 10) : -1;
       // Sessions are short-lived and DB-validated against user_id, so no TTL here.
-      if (!(await guardComponent(interaction as ButtonInteraction, owner, undefined))) return;
+      if (!(await guardComponent(interaction as ButtonInteraction, owner, undefined, lang))) return;
       await handleMinesAction(interaction as ButtonInteraction, client, action, sessionId, pos, lang);
       return;
     }
@@ -116,7 +204,7 @@ async function handleComponentInteraction(
       const parts = customId.split(':');
       const owner = parts[parts.length - 2];
       const ts    = parseInt(parts[parts.length - 1], 10);
-      if (!(await guardComponent(interaction as ButtonInteraction, owner, ts))) return;
+      if (!(await guardComponent(interaction as ButtonInteraction, owner, ts, lang))) return;
       const { handleDuelButton } = await import('../utils/duel');
       await handleDuelButton(interaction as ButtonInteraction, client);
       return;
@@ -128,13 +216,13 @@ async function handleComponentInteraction(
       const questId = parseInt(parts[1], 10);
       const owner   = parts[2];
       const ts      = parseInt(parts[3], 10);
-      if (!(await guardComponent(interaction as ButtonInteraction, owner, ts))) return;
+      if (!(await guardComponent(interaction as ButtonInteraction, owner, ts, lang))) return;
       const result  = await withUserLock(interaction.user.id, () =>
         client.db.claimQuestReward(questId, interaction.user.id),
       );
       if (!result) {
         await interaction.reply({
-          embeds: [EmbedHelper.errorEmbed('❌ Błąd', 'Nagroda już odebrana lub quest nie ukończony.')],
+          embeds: [EmbedHelper.errorEmbed('❌ Błąd', t(lang, 'quests_claim_error'))],
           flags: 64,
         });
         return;
@@ -152,20 +240,21 @@ async function handleComponentInteraction(
       const parts = customId.split(':');
       const owner = parts[1];
       const ts    = parseInt(parts[2], 10);
-      if (!(await guardComponent(interaction as StringSelectMenuInteraction, owner, ts))) return;
+      if (!(await guardComponent(interaction as StringSelectMenuInteraction, owner, ts, lang))) return;
 
-      const { createMainEmbed, createGamesEmbed, createEconomyEmbed, createProgressEmbed, buildHelpSelectMenu } =
+      const { createMainEmbed, createGamesEmbed, createEconomyEmbed, createProgressEmbed, createSettingsEmbed, buildHelpSelectMenu } =
         await import('../commands/help');
       const value = (interaction as any).values[0] as string;
       let newEmbed;
       switch (value) {
-        case 'games':    newEmbed = createGamesEmbed(); break;
-        case 'economy':  newEmbed = createEconomyEmbed(); break;
-        case 'progress': newEmbed = createProgressEmbed(); break;
-        default:         newEmbed = createMainEmbed(interaction.user.username);
+        case 'games':    newEmbed = createGamesEmbed(lang); break;
+        case 'economy':  newEmbed = createEconomyEmbed(lang); break;
+        case 'progress': newEmbed = createProgressEmbed(lang); break;
+        case 'settings': newEmbed = createSettingsEmbed(lang); break;
+        default:         newEmbed = createMainEmbed(interaction.user.username, lang);
       }
       // Re-issue the menu with the same owner so it stays valid for its lifetime.
-      await (interaction as any).update({ embeds: [newEmbed], components: [buildHelpSelectMenu(owner)] });
+      await (interaction as any).update({ embeds: [newEmbed], components: [buildHelpSelectMenu(owner, lang)] });
       return;
     }
 
@@ -186,11 +275,16 @@ function gamesConfigKey(game: string): string {
   return game;
 }
 
+const PLAY_AGAIN_FILES: Record<string, string> = {
+  ruletka: 'roulette',
+};
+
 async function resolvePlayAgainCommand(client: CasinoBot, game: string): Promise<Command | null> {
   const existing = client.commands.get(game);
   if (existing) return existing;
+  const file = PLAY_AGAIN_FILES[game] ?? game;
   try {
-    const imported = await import(`../commands/${game}`);
+    const imported = await import(`../commands/${file}`);
     let resolved: any = imported;
     for (let i = 0; i < 3; i++) {
       if (resolved && typeof resolved === 'object' && 'default' in resolved) {
@@ -204,7 +298,7 @@ async function resolvePlayAgainCommand(client: CasinoBot, game: string): Promise
       return resolved as Command;
     }
   } catch {
-    // Command file may not be on disk yet (parallel game agents).
+    // Command file may not be on disk yet.
   }
   return null;
 }
@@ -225,43 +319,150 @@ async function handlePlayAgain(
   const lang = await getUserLang(client.db, interaction.user.id);
   const userId = interaction.user.id;
 
+  try {
+    const { value: isBlocked, timedOut } = await withTimeout(
+      client.db.isUserBlocked(userId),
+      1500,
+      false,
+    );
+    if (timedOut) {
+      console.warn(`[ROYALCASINO] Timeout sprawdzania blokady (play_again) dla ${userId}`);
+    }
+    if (isBlocked) {
+      const userData = await client.db.getUser(userId);
+      await interaction.reply({
+        embeds: [EmbedHelper.errorEmbed(
+          t(lang, 'blocked_title'),
+          t(lang, 'blocked')(userData.blocked_reason || ''),
+        )],
+        flags: 64,
+      });
+      return;
+    }
+  } catch (error) {
+    console.error('[ROYALCASINO] Błąd sprawdzania blokady (play_again):', error);
+  }
+
+  try {
+    if (await client.db.isMaintenance()) {
+      await interaction.reply({
+        embeds: [EmbedHelper.errorEmbed(t(lang, 'maintenance_title'), t(lang, 'maintenance'))],
+        flags: 64,
+      });
+      return;
+    }
+    if (await client.db.isUserFrozen(userId)) {
+      await interaction.reply({
+        embeds: [EmbedHelper.errorEmbed(t(lang, 'frozen_title'), t(lang, 'frozen'))],
+        flags: 64,
+      });
+      return;
+    }
+  } catch (error) {
+    console.error('[ROYALCASINO] Błąd sprawdzania freeze/maintenance (play_again):', error);
+  }
+
+  if (interaction.inGuild() && interaction.guildId) {
+    const guildSettings = await readGuildSettings(client.db, interaction.guildId);
+    const requiredChannel = restrictedCasinoChannelId(game, guildSettings, interaction.channelId);
+    if (requiredChannel) {
+      await interaction.reply({
+        embeds: [EmbedHelper.errorEmbed(
+          t(lang, 'casino_channel_title'),
+          t(lang, 'casino_channel_only')(`<#${requiredChannel}>`),
+        )],
+        flags: 64,
+      });
+      return;
+    }
+  }
+
+  const cooldownKey = game;
+  const cooldownAmount = (COOLDOWNS[cooldownKey] ?? 3) * 1000;
+  if (!cooldowns.has(cooldownKey)) {
+    cooldowns.set(cooldownKey, new Collection());
+  }
+  const timestamps = cooldowns.get(cooldownKey)!;
+  const now = Date.now();
+  if (timestamps.has(userId)) {
+    const expirationTime = timestamps.get(userId)! + cooldownAmount;
+    if (now < expirationTime) {
+      const timeLeft = ((expirationTime - now) / 1000).toFixed(1);
+      await interaction.reply({
+        embeds: [EmbedHelper.warningEmbed(
+          t(lang, 'cooldown_title'),
+          t(lang, 'cooldown')(timeLeft, game),
+        )],
+        flags: 64,
+      });
+      return;
+    }
+  }
+
   if (!Number.isInteger(bet) || bet <= 0) {
-    const embed = EmbedHelper.errorEmbed('❌ Błąd', t(lang, 'error_generic'));
+    const embed = EmbedHelper.errorEmbed(t(lang, 'error_title'), t(lang, 'error_generic'));
     await interaction.reply({ embeds: [embed], flags: 64 });
     return;
   }
   if (bet > MAX_BET) {
     const embed = EmbedHelper.errorEmbed(
-      '🚫 Zakład Za Wysoki',
-      `Maksymalny zakład to **$${MAX_BET.toLocaleString()}**.`,
+      t(lang, 'max_bet_title'),
+      t(lang, 'max_bet')(MAX_BET),
     );
     await interaction.reply({ embeds: [embed], flags: 64 });
+    return;
+  }
+  try {
+    const limit = await client.db.getBetLimit(userId);
+    if (limit.maxBet != null && bet > limit.maxBet) {
+      await interaction.reply({
+        embeds: [EmbedHelper.errorEmbed(
+          t(lang, 'user_bet_limit_title'),
+          t(lang, 'user_bet_limit')(limit.maxBet, formatLimitUntil(limit.until)),
+        )],
+        flags: 64,
+      });
+      return;
+    }
+  } catch (error) {
+    console.error('[ROYALCASINO] Błąd limitu zakładu (play_again):', error);
+  }
+
+  if (game === 'slots' && bet > GAMES.slots.maxBet) {
+    await interaction.reply({
+      embeds: [EmbedHelper.errorEmbed(
+        t(lang, 'max_bet_title'),
+        t(lang, 'error_insufficient_credits')(bet, 0),
+      )],
+      flags: 64,
+    });
     return;
   }
 
   const minBet = (GAMES as Record<string, { minBet?: number } | undefined>)[gamesConfigKey(game)]?.minBet;
   if (typeof minBet === 'number' && bet < minBet) {
     const embed = EmbedHelper.errorEmbed(
-      '🚫 Zakład Za Niski',
-      `Minimalny zakład to **$${minBet.toLocaleString()}**.`,
+      t(lang, 'min_bet_title'),
+      t(lang, 'min_bet')(minBet),
     );
     await interaction.reply({ embeds: [embed], flags: 64 });
     return;
   }
 
   const command = await resolvePlayAgainCommand(client, game);
-  // pojedynek play_again exists (rewanż with opponent id in extra). If the
-  // command file is missing, skip rather than breaking other games.
   if (game === 'pojedynek' && !command) return;
   if (!command) {
-    await interaction.reply({ content: `Use \`/${game}\` to play again.`, flags: 64 });
+    await interaction.reply({ content: t(lang, 'play_again_missing')(game), flags: 64 });
     return;
   }
 
   await interaction.deferReply();
 
+  timestamps.set(userId, Date.now());
+  setTimeout(() => timestamps.delete(userId), cooldownAmount);
+
   try {
-    await withUserLock(userId, async () => {
+    const funded = await withUserLock(userId, async () => {
       const userData = await client.db.getUser(userId);
       if (game === 'slots') {
         if (userData.credits < bet) {
@@ -270,85 +471,108 @@ async function handlePlayAgain(
             t(lang, 'error_insufficient_credits')(bet, userData.credits),
           );
           await interaction.editReply({ embeds: [embed] });
-          return;
+          return false;
         }
-      } else if (userData.money < bet) {
-        const embed = EmbedHelper.errorEmbed(
-          t(lang, 'insufficient_funds_title'),
-          t(lang, 'error_insufficient_funds')(bet, userData.money),
-        );
-        await interaction.editReply({ embeds: [embed] });
+      } else {
+        const need = game === 'poker' ? bet * 2 : bet;
+        if (userData.money < need) {
+          const embed = EmbedHelper.errorEmbed(
+            t(lang, 'insufficient_funds_title'),
+            game === 'poker'
+              ? t(lang, 'poker_need')(need, userData.money)
+              : t(lang, 'error_insufficient_funds')(need, userData.money),
+          );
+          await interaction.editReply({ embeds: [embed] });
+          return false;
+        }
+      }
+      return true;
+    });
+    if (!funded) return;
+
+    let opponentUser: any = null;
+    if (game === 'pojedynek') {
+      if (!extra) {
+        await interaction.editReply({
+          embeds: [EmbedHelper.errorEmbed(t(lang, 'duel_no_opponent_title'), t(lang, 'duel_no_opponent'))],
+        });
         return;
       }
-
-      let opponentUser: any = null;
-      if (game === 'pojedynek') {
-        // extra = opponent snowflake (`play_again:pojedynek:${bet}:${opponentId}`)
-        if (!extra) {
-          await interaction.editReply({
-            embeds: [EmbedHelper.errorEmbed('❌ Brak przeciwnika', 'Użyj `/pojedynek`, aby wyzwać gracza.')],
-          });
-          return;
-        }
-        opponentUser = await client.users.fetch(extra).catch(() => null);
-        if (!opponentUser) {
-          await interaction.editReply({
-            embeds: [EmbedHelper.errorEmbed('❌ Brak przeciwnika', 'Nie znaleziono gracza do rewanżu.')],
-          });
-          return;
-        }
+      opponentUser = await client.users.fetch(extra).catch(() => null);
+      if (!opponentUser) {
+        await interaction.editReply({
+          embeds: [EmbedHelper.errorEmbed(t(lang, 'duel_no_opponent_title'), t(lang, 'duel_no_opponent_rematch'))],
+        });
+        return;
       }
+    }
 
-      const fakeInteraction = Object.create(interaction) as any;
-      fakeInteraction.options = {
-        getInteger: (name: string) => {
-          if (name === 'zakład' || name === 'bet') return bet;
-          // limbo: extra is target × 100 (no decimal). Also mapped to `cel`.
-          if (game === 'limbo' && (name === 'liczba' || name === 'cel' || name === 'target')) {
-            return parseOptionInt(extra);
-          }
-          if (name === 'liczba' || name === 'miny') {
-            if (game === 'pojedynek' || game === 'plinko') return null;
-            return parseOptionInt(extra);
-          }
-          return null;
-        },
-        getNumber: (name: string) => {
-          if (game === 'limbo' && (name === 'cel' || name === 'target' || name === 'mnożnik' || name === 'mnoznik')) {
-            // extra is target × 100; slash `cel` is the real multiplier (1.10–100).
-            const encoded = parseOptionInt(extra);
-            return encoded == null ? null : encoded / 100;
-          }
-          return null;
-        },
-        getString: (name: string) => {
-          if (name === 'wybór' || name === 'typ') return extra ?? null;
-          return null;
-        },
-        getUser: (name: string) => {
-          if ((name === 'użytkownik' || name === 'user') && opponentUser) return opponentUser;
-          return null;
-        },
-      };
-      fakeInteraction.isChatInputCommand = () => true;
-      fakeInteraction.replied = false;
-      fakeInteraction.deferred = true;
-      fakeInteraction.deferReply = () => Promise.resolve(undefined);
-      fakeInteraction.reply = (options: any) => interaction.editReply(options);
+    const rouletteNumber = game === 'ruletka' && extra?.startsWith('number:')
+      ? parseOptionInt(extra.slice('number:'.length))
+      : null;
 
-      await command.execute(fakeInteraction);
-    });
+    const fakeInteraction = Object.create(interaction) as any;
+    fakeInteraction.options = {
+      getInteger: (name: string) => {
+        if (name === 'zakład' || name === 'bet') return bet;
+        if (game === 'limbo' && (name === 'liczba' || name === 'cel' || name === 'target')) {
+          return parseOptionInt(extra);
+        }
+        if (name === 'liczba') {
+          if (game === 'ruletka') return rouletteNumber;
+          if (game === 'pojedynek' || game === 'plinko' || game === 'keno') return null;
+          return parseOptionInt(extra);
+        }
+        if (name === 'miny') {
+          return parseOptionInt(extra);
+        }
+        return null;
+      },
+      getNumber: (name: string) => {
+        if (game === 'limbo' && (name === 'cel' || name === 'target' || name === 'mnożnik' || name === 'mnoznik')) {
+          const encoded = parseOptionInt(extra);
+          return encoded == null ? null : encoded / 100;
+        }
+        return null;
+      },
+      getString: (name: string) => {
+        if (name === 'wybór' || name === 'typ') {
+          if (game === 'ruletka') return extra?.startsWith('number:') ? 'number' : (extra ?? null);
+          return extra ?? null;
+        }
+        if (name === 'liczby') return extra ?? null;
+        return null;
+      },
+      getUser: (name: string) => {
+        if ((name === 'użytkownik' || name === 'user') && opponentUser) return opponentUser;
+        return null;
+      },
+    };
+    fakeInteraction.isChatInputCommand = () => true;
+    fakeInteraction.replied = false;
+    fakeInteraction.deferred = true;
+    fakeInteraction.deferReply = () => Promise.resolve(undefined);
+    fakeInteraction.reply = (options: any) => interaction.editReply(options);
+
+    await command.execute(fakeInteraction);
   } catch (err) {
     if (isUnknownInteractionError(err)) return;
     console.error('[ROYALCASINO] play_again error:', err);
     const insufficient = err instanceof InsufficientFundsError;
+    let has = 0;
+    if (insufficient) {
+      const latest = await client.db.getUser(userId).catch(() => null);
+      has = latest ? (game === 'slots' ? latest.credits : latest.money) : 0;
+    }
     await interaction.editReply({
       embeds: [insufficient
         ? EmbedHelper.errorEmbed(
-            t(lang, 'insufficient_funds_title'),
-            t(lang, 'error_insufficient_funds')(bet, 0),
+            game === 'slots' ? t(lang, 'insufficient_credits_title') : t(lang, 'insufficient_funds_title'),
+            game === 'slots'
+              ? t(lang, 'error_insufficient_credits')(bet, has)
+              : t(lang, 'error_insufficient_funds')(bet, has),
           )
-        : EmbedHelper.errorEmbed('❌ Błąd', t(lang, 'error_generic'))],
+        : EmbedHelper.errorEmbed(t(lang, 'error_title'), t(lang, 'error_generic'))],
     });
   }
 }
@@ -392,7 +616,7 @@ function buildMinesPlayAgainRow(
   ownerId: string,
   bet: number,
   minesCount: number,
-  lang: 'pl',
+  lang: Lang,
 ): ActionRowBuilder<ButtonBuilder> {
   return playAgainRow({
     customIdPlayAgain: withOwner(`play_again:miny:${bet}:${minesCount}`, ownerId),
@@ -408,7 +632,7 @@ async function handleMinesAction(
   action: string,
   sessionId: string,
   position: number,
-  lang: 'pl',
+  lang: Lang,
 ): Promise<void> {
   const { buildMinesGrid } = await import('../commands/miny');
 
@@ -423,7 +647,7 @@ async function handleMinesAction(
       } catch {
         // Already cashed out or blown up — a re-press of a stale button.
         await interaction.followUp({
-          embeds: [EmbedHelper.warningEmbed(t(lang, 'mines_title'), 'Ta gra jest już rozliczona.')],
+          embeds: [EmbedHelper.warningEmbed(t(lang, 'mines_title'), t(lang, 'mines_settled'))],
           flags: 64,
         });
         return;
@@ -431,13 +655,14 @@ async function handleMinesAction(
       const multi   = '?';  // session ended, exact stored in cashoutMines
       const balance = (await client.db.getUser(interaction.user.id)).money;
       const bet = active?.bet ?? 0;
-      const embed   = gameResultEmbed({
+        const embed   = gameResultEmbed({
         title: t(lang, 'mines_title'),
         won: true,
         bet,
         result: formatUsd(payout),
         balance,
         extra: t(lang, 'mines_cashed_out')(multi, payout),
+        lang,
       });
       const againRow = buildMinesPlayAgainRow(interaction.user.id, active?.bet ?? 0, active?.mines_count ?? 3, lang);
       await interaction.editReply({ embeds: [embed], components: [againRow] });
@@ -454,23 +679,29 @@ async function handleMinesAction(
         ({ safe, session } = await client.db.revealMineTile(sessionId, interaction.user.id, position));
       } catch {
         await interaction.followUp({
-          embeds: [EmbedHelper.warningEmbed(t(lang, 'mines_title'), 'Ta gra jest już rozliczona.')],
+          embeds: [EmbedHelper.warningEmbed(t(lang, 'mines_title'), t(lang, 'mines_settled'))],
           flags: 64,
         });
         return;
       }
 
       if (!safe) {
-        // Board fills all 5 rows on reveal-all, so Discord leaves no room for a button row here.
         const components = buildMinesGrid(session, true, sessionId, interaction.user.id, true);
+        components[0] = buildMinesPlayAgainRow(
+          interaction.user.id,
+          session.bet,
+          session.mines_count,
+          lang,
+        );
         const balance = (await client.db.getUser(interaction.user.id)).money;
         const embed = gameResultEmbed({
           title: t(lang, 'mines_title'),
           won: false,
           bet: session.bet,
-          result: 'Mina',
+          result: t(lang, 'mines_hit'),
           balance,
           extra: t(lang, 'mines_exploded')(session.bet),
+          lang,
         });
         await interaction.editReply({ embeds: [embed], components });
         return;
@@ -486,11 +717,11 @@ async function handleMinesAction(
         pendingList(
           t(lang, 'mines_safe'),
           [
-            ['Zakład', formatUsd(session.bet)],
-            ['Miny', String(session.mines_count)],
-            ['Mnożnik', `${multiStr}x`],
-            ['Potencjalna wypłata', formatUsd(potential)],
-            ['Odkryte', `${session.revealed_positions.length}/${GAMES_GRID - session.mines_count}`],
+            [t(lang, 'label_bet'), formatUsd(session.bet)],
+            [t(lang, 'mines_label_mines'), String(session.mines_count)],
+            [t(lang, 'mines_label_multi'), `${multiStr}x`],
+            [t(lang, 'mines_label_potential'), formatUsd(potential)],
+            [t(lang, 'mines_label_revealed'), `${session.revealed_positions.length}/${GAMES.mines.gridSize - session.mines_count}`],
           ],
         ),
       );
@@ -498,9 +729,6 @@ async function handleMinesAction(
     });
   }
 }
-
-const GAMES_GRID = 25;
-
 
 export default {
   name: 'interactionCreate',
@@ -531,6 +759,58 @@ export default {
         return;
       }
 
+      try {
+        if (
+          !MAINTENANCE_ALLOWED.has(interaction.commandName)
+          && await client.db.isMaintenance()
+        ) {
+          const lang = await getUserLang(client.db, interaction.user.id);
+          await safeReply(interaction, {
+            embeds: [EmbedHelper.errorEmbed(t(lang, 'maintenance_title'), t(lang, 'maintenance'))],
+            flags: 64,
+          });
+          return;
+        }
+      } catch (error) {
+        console.error('[ROYALCASINO] Błąd sprawdzania konserwacji:', error);
+      }
+
+      try {
+        if (
+          FROZEN_COMMANDS.has(interaction.commandName)
+          && await client.db.isUserFrozen(interaction.user.id)
+        ) {
+          const lang = await getUserLang(client.db, interaction.user.id);
+          await safeReply(interaction, {
+            embeds: [EmbedHelper.errorEmbed(t(lang, 'frozen_title'), t(lang, 'frozen'))],
+            flags: 64,
+          });
+          return;
+        }
+      } catch (error) {
+        console.error('[ROYALCASINO] Błąd sprawdzania zamrożenia:', error);
+      }
+
+      if (interaction.inGuild() && interaction.guildId) {
+        const guildSettings = await readGuildSettings(client.db, interaction.guildId);
+        const requiredChannel = restrictedCasinoChannelId(
+          interaction.commandName,
+          guildSettings,
+          interaction.channelId,
+        );
+        if (requiredChannel) {
+          const lang = await getUserLang(client.db, interaction.user.id);
+          await safeReply(interaction, {
+            embeds: [EmbedHelper.errorEmbed(
+              t(lang, 'casino_channel_title'),
+              t(lang, 'casino_channel_only')(`<#${requiredChannel}>`),
+            )],
+            flags: 64,
+          });
+          return;
+        }
+      }
+
       // Hard bet ceiling. Enforced here rather than per-command so no game can
       // ever be played for an unbounded amount, whatever a payout bug does.
       // Wrapped so a resolver quirk on some command shape can never take down
@@ -542,12 +822,31 @@ export default {
         console.error('[ROYALCASINO] Nie udało się odczytać opcji zakładu:', error);
       }
       if (betOption !== null && betOption > MAX_BET) {
+        const lang = await getUserLang(client.db, interaction.user.id);
         const embed = EmbedHelper.errorEmbed(
-          '🚫 Zakład Za Wysoki',
-          `Maksymalny zakład to **$${MAX_BET.toLocaleString()}**.`,
+          t(lang, 'max_bet_title'),
+          t(lang, 'max_bet')(MAX_BET),
         );
         await safeReply(interaction, { embeds: [embed], flags: 64 });
         return;
+      }
+      if (betOption !== null) {
+        try {
+          const limit = await client.db.getBetLimit(interaction.user.id);
+          if (limit.maxBet != null && betOption > limit.maxBet) {
+            const lang = await getUserLang(client.db, interaction.user.id);
+            await safeReply(interaction, {
+              embeds: [EmbedHelper.errorEmbed(
+                t(lang, 'user_bet_limit_title'),
+                t(lang, 'user_bet_limit')(limit.maxBet, formatLimitUntil(limit.until)),
+              )],
+              flags: 64,
+            });
+            return;
+          }
+        } catch (error) {
+          console.error('[ROYALCASINO] Błąd limitu zakładu:', error);
+        }
       }
 
       // Rate limiting / cooldown check
@@ -566,7 +865,7 @@ export default {
           const timeLeft = ((expirationTime - now) / 1000).toFixed(1);
           const lang = await getUserLang(client.db, interaction.user.id);
           const embed = EmbedHelper.warningEmbed(
-            '⏳ Cooldown',
+            t(lang, 'cooldown_title'),
             t(lang, 'cooldown')(timeLeft, interaction.commandName),
           );
           await safeReply(interaction, { embeds: [embed], flags: 64 });
@@ -590,7 +889,7 @@ export default {
           const userData = await client.db.getUser(interaction.user.id);
           const lang = await getUserLang(client.db, interaction.user.id);
           const embed = EmbedHelper.errorEmbed(
-            '🚫 Konto Zablokowane',
+            t(lang, 'blocked_title'),
             t(lang, 'blocked')(userData.blocked_reason || ''),
           );
           await safeReply(interaction, { embeds: [embed], flags: 64 });
@@ -611,9 +910,10 @@ export default {
         if (isUnknownInteractionError(error)) return;
         console.error(`[ROYALCASINO] Błąd komendy /${interaction.commandName}:`, error);
 
+        const lang = await getUserLang(client.db, interaction.user.id);
         const embed = EmbedHelper.errorEmbed(
-          '❌ Wystąpił Błąd',
-          'Coś poszło nie tak! Spróbuj ponownie za chwilę.'
+          t(lang, 'error_title'),
+          t(lang, 'error_generic'),
         );
 
         try {

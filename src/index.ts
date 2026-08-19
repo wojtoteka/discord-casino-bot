@@ -4,6 +4,7 @@ import { readdirSync } from 'fs';
 import { join } from 'path';
 import { Database } from './database/Database';
 import { sendLevelUpDM, sendAchievementDM, sendBigWinDM, sendWelcomeDM } from './utils/notifications';
+import { sendAdminAlert } from './utils/adminAlerts';
 
 config();
 
@@ -81,6 +82,10 @@ export class CasinoBot extends Client {
 
     this.db.on('newUser', ({ userId }) => {
       sendWelcomeDM(this, userId).catch(() => {});
+    });
+
+    this.db.on('adminAlert', (payload) => {
+      sendAdminAlert(this, payload).catch(() => {});
     });
 
     console.log('📬 [ROYALCASINO] System powiadomień DM aktywny');

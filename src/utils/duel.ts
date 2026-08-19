@@ -4,14 +4,19 @@ import {
   ButtonBuilder,
   ButtonInteraction,
   ButtonStyle,
+  EmbedBuilder,
 } from 'discord.js';
 import { Database } from '../database/Database';
+import { BRAND, COLORS } from '../config/constants';
+import { getUserLang, t, type Lang } from '../i18n';
 import { formatAchievementNamesInline } from './achievements';
 import { withOwner } from './components';
 import {
+  asQuote,
+  brandTitle,
   formatUsd,
-  gameResultEmbed,
   infoGameEmbed,
+  listLine,
   pendingEmbed,
   pendingList,
   playAgainRow,
@@ -28,10 +33,12 @@ import { withUserLocks } from './moneyLock';
  *
  * Result (goes through interactionCreate, not the collector):
  *
- *   play_again:pojedynek:<bet>:<opponentId>:<owner=challengerId>:<ts>
- *   nav:balance:<challengerId>:<owner=challengerId>:<ts>
+ *   play_again:pojedynek:<bet>:<opponentId>:<challengerId>:<ts>
+ *     both player ids are allowed (comma-owner check in the router)
+ *   nav:balance:self:<challengerId>,<opponentId>:<ts>
  *
- * play_again extra (parts[3]) = opponent snowflake. If that customId exceeds
+ * play_again extra (parts[3]) = original opponent. The router swaps the target
+ * when the original opponent clicks rematch. If that customId exceeds
  * Discord's 100-char limit, rematch is omitted and only Saldo is shown.
  */
 export const DUEL_PREFIX = 'duel:';
@@ -148,29 +155,31 @@ export function rememberOpponent(challengerId: string, opponentId: string): void
   lastOpponent.set(challengerId, opponentId);
 }
 
-export function createChallenge(params: {
+export async function createChallenge(params: {
   challengerId: string;
   opponentId: string;
   bet: number;
-}): DuelChallenge | null {
-  if (isUserInDuel(params.challengerId) || isUserInDuel(params.opponentId)) {
-    return null;
-  }
+}): Promise<DuelChallenge | null> {
+  return withUserLocks([params.challengerId, params.opponentId], () => {
+    if (isUserInDuel(params.challengerId) || isUserInDuel(params.opponentId)) {
+      return null;
+    }
 
-  const challenge: DuelChallenge = {
-    id: newChallengeId(),
-    challengerId: params.challengerId,
-    opponentId: params.opponentId,
-    bet: params.bet,
-    status: 'pending',
-    createdAt: Date.now(),
-  };
+    const challenge: DuelChallenge = {
+      id: newChallengeId(),
+      challengerId: params.challengerId,
+      opponentId: params.opponentId,
+      bet: params.bet,
+      status: 'pending',
+      createdAt: Date.now(),
+    };
 
-  challenges.set(challenge.id, challenge);
-  userChallenge.set(challenge.challengerId, challenge.id);
-  userChallenge.set(challenge.opponentId, challenge.id);
-  rememberOpponent(params.challengerId, params.opponentId);
-  return challenge;
+    challenges.set(challenge.id, challenge);
+    userChallenge.set(challenge.challengerId, challenge.id);
+    userChallenge.set(challenge.opponentId, challenge.id);
+    rememberOpponent(params.challengerId, params.opponentId);
+    return challenge;
+  });
 }
 
 /** Returns true when this challenge was still pending and is now expired. */
@@ -200,19 +209,22 @@ export function parseDuelCustomId(
   return { action, challengeId };
 }
 
-export function buildChallengeButtons(challenge: DuelChallenge): ActionRowBuilder<ButtonBuilder> {
+export function buildChallengeButtons(
+  challenge: DuelChallenge,
+  lang: Lang = 'pl',
+): ActionRowBuilder<ButtonBuilder> {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId(withOwner(`${DUEL_PREFIX}accept:${challenge.id}`, challenge.opponentId))
-      .setLabel('✅ Przyjmij')
+      .setLabel(t(lang, 'duel_btn_accept'))
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId(withOwner(`${DUEL_PREFIX}decline:${challenge.id}`, challenge.opponentId))
-      .setLabel('❌ Odrzuć')
+      .setLabel(t(lang, 'duel_btn_decline'))
       .setStyle(ButtonStyle.Danger),
     new ButtonBuilder()
       .setCustomId(withOwner(`${DUEL_PREFIX}cancel:${challenge.id}`, challenge.challengerId))
-      .setLabel('🚫 Anuluj')
+      .setLabel(t(lang, 'duel_btn_cancel'))
       .setStyle(ButtonStyle.Secondary),
   );
 }
@@ -221,39 +233,44 @@ export function buildDuelResultRow(params: {
   challengerId: string;
   opponentId: string;
   bet: number;
+  lang?: Lang;
 }): ActionRowBuilder<ButtonBuilder> {
-  const balanceId = withOwner(`nav:balance:${params.challengerId}`, params.challengerId);
-  const playAgainId = withOwner(
-    `play_again:pojedynek:${params.bet}:${params.opponentId}`,
-    params.challengerId,
-  );
+  const lang = params.lang ?? 'pl';
+  const ts = Date.now();
+  const owners = `${params.challengerId},${params.opponentId}`;
+  const playAgainId = `play_again:pojedynek:${params.bet}:${params.opponentId}:${params.challengerId}:${ts}`;
+  const balanceId = `nav:balance:self:${owners}:${ts}`;
 
   if (playAgainId.length <= DISCORD_CUSTOM_ID_MAX) {
     return playAgainRow({
       customIdPlayAgain: playAgainId,
       customIdBalance: balanceId,
-      playAgainLabel: '⚔️ Rewanż',
-      balanceLabel: '💰 Saldo',
+      playAgainLabel: t(lang, 'duel_btn_rematch'),
+      balanceLabel: t(lang, 'duel_btn_balance'),
     });
   }
 
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId(balanceId)
-      .setLabel('💰 Saldo')
+      .setLabel(t(lang, 'duel_btn_balance'))
       .setStyle(ButtonStyle.Secondary),
   );
 }
 
-export function pendingDescription(challenge: DuelChallenge, expiresAtSec: number): string {
+export function pendingDescription(
+  challenge: DuelChallenge,
+  expiresAtSec: number,
+  lang: Lang = 'pl',
+): string {
   const pool = challenge.bet * 2;
   return pendingList(
-    `<@${challenge.challengerId}> rzuca wyzwanie <@${challenge.opponentId}>.`,
+    t(lang, 'duel_challenge_intro')(`<@${challenge.challengerId}>`, `<@${challenge.opponentId}>`),
     [
-      ['Stawka', formatUsd(challenge.bet)],
-      ['Pula', formatUsd(pool)],
+      [t(lang, 'duel_stake'), formatUsd(challenge.bet)],
+      [t(lang, 'duel_pool'), formatUsd(pool)],
     ],
-    `Wygasa <t:${expiresAtSec}:R>. Nic nie schodzi z konta przed akceptacją.\nWyzwany: **Przyjmij** albo **Odrzuć**. Wzywający może **Anulować**.`,
+    `${t(lang, 'duel_expires')(expiresAtSec)}\n${t(lang, 'duel_pending_tip')}`,
   );
 }
 
@@ -375,20 +392,51 @@ async function settleDuel(client: DuelClient, challenge: DuelChallenge): Promise
   });
 }
 
-function extraLines(result: SettleOk): string | undefined {
-  const lines: string[] = [
-    `<@${result.loserId}> przegrywa stawkę.`,
-    `Wzywający: **${formatUsd(result.challengerBalance)}** · Wyzwany: **${formatUsd(result.opponentBalance)}**`,
+async function displayName(interaction: ButtonInteraction, userId: string): Promise<string> {
+  if (interaction.user.id === userId) return interaction.user.username;
+  const cached = interaction.client.users.cache.get(userId);
+  if (cached) return cached.username;
+  const fetched = await interaction.client.users.fetch(userId).catch(() => null);
+  return fetched?.username ?? userId;
+}
+
+function duelResultEmbed(params: {
+  lang: Lang;
+  winnerName: string;
+  loserName: string;
+  pool: number;
+  bet: number;
+  winnerBalance: number;
+  loserBalance: number;
+  winnerAchievements: string[];
+  loserAchievements: string[];
+}): EmbedBuilder {
+  const { lang } = params;
+  const lines = [
+    t(lang, 'duel_win_sentence')(params.winnerName, formatUsd(params.pool)),
+    '',
+    listLine(t(lang, 'label_bet'), formatUsd(params.bet)),
+    listLine(t(lang, 'duel_winner_balance'), formatUsd(params.winnerBalance)),
+    listLine(t(lang, 'duel_opponent_balance'), formatUsd(params.loserBalance)),
   ];
 
-  if (result.winnerAchievements.length > 0) {
-    lines.push(`<@${result.winnerId}> — ${formatAchievementNamesInline(result.winnerAchievements)}`);
+  const extra: string[] = [];
+  if (params.winnerAchievements.length > 0) {
+    extra.push(`${params.winnerName} — ${formatAchievementNamesInline(params.winnerAchievements)}`);
   }
-  if (result.loserAchievements.length > 0) {
-    lines.push(`<@${result.loserId}> — ${formatAchievementNamesInline(result.loserAchievements)}`);
+  if (params.loserAchievements.length > 0) {
+    extra.push(`${params.loserName} — ${formatAchievementNamesInline(params.loserAchievements)}`);
+  }
+  if (extra.length > 0) {
+    lines.push('', asQuote(extra.join('\n')));
   }
 
-  return lines.join('\n');
+  return new EmbedBuilder()
+    .setTitle(brandTitle(t(lang, 'duel_title')))
+    .setColor(COLORS.success)
+    .setDescription(lines.join('\n'))
+    .setFooter({ text: BRAND.footerText })
+    .setTimestamp();
 }
 
 function finishChallenge(challenge: DuelChallenge): void {
@@ -412,39 +460,50 @@ export async function handleDuelButton(
   const parsed = parseDuelCustomId(interaction.customId);
   if (!parsed) return 'continue';
 
+  const clickerLang = await getUserLang(client.db, interaction.user.id);
   const challenge = getChallenge(parsed.challengeId);
   if (!challenge) {
     if (recentlyResolved.has(parsed.challengeId) || interaction.replied || interaction.deferred) {
-      await ephemeralNotice(interaction, '✅ Już zakończone', 'To wyzwanie jest już rozstrzygnięte.');
+      await ephemeralNotice(
+        interaction,
+        t(clickerLang, 'duel_already_done_title'),
+        t(clickerLang, 'duel_already_done'),
+      );
       return 'stop';
     }
     await ackUpdate(interaction, {
-      content: '⏳ Wyzwanie wygasło.',
-      embeds: [infoGameEmbed('Pojedynek', 'To wyzwanie wygasło. Nic nie zostało pobrane.')],
+      content: t(clickerLang, 'duel_expired_content'),
+      embeds: [infoGameEmbed(t(clickerLang, 'duel_title'), t(clickerLang, 'duel_expired_desc'))],
       components: [],
     });
     return 'stop';
   }
 
+  const publicLang = await getUserLang(client.db, challenge.challengerId);
   const clicker = interaction.user.id;
+  const title = t(publicLang, 'duel_title');
 
   if (parsed.action === 'cancel') {
     if (clicker !== challenge.challengerId) {
       await ephemeralNotice(
         interaction,
-        '⛔ Nie Twój przycisk',
-        'Anulować może tylko osoba, która wysłała wyzwanie.',
+        t(clickerLang, 'duel_not_your_button_title'),
+        t(clickerLang, 'duel_not_your_cancel'),
       );
       return 'continue';
     }
     if (challenge.status !== 'pending') {
-      await ephemeralNotice(interaction, '⚠️ Za późno', 'To wyzwanie jest już rozstrzygane albo zakończone.');
+      await ephemeralNotice(
+        interaction,
+        t(clickerLang, 'duel_too_late_title'),
+        t(clickerLang, 'duel_too_late'),
+      );
       return 'continue';
     }
     finishChallenge(challenge);
     await ackUpdate(interaction, {
-      content: '🚫 Wyzwanie anulowane.',
-      embeds: [infoGameEmbed('Pojedynek', 'Wzywający anulował pojedynek. Nic nie zostało pobrane.')],
+      content: t(publicLang, 'duel_cancelled_content'),
+      embeds: [infoGameEmbed(title, t(publicLang, 'duel_cancelled_desc'))],
       components: [],
     });
     return 'stop';
@@ -454,19 +513,23 @@ export async function handleDuelButton(
     if (clicker !== challenge.opponentId) {
       await ephemeralNotice(
         interaction,
-        '⛔ Nie Twój przycisk',
-        'Przyjąć albo odrzucić może tylko wyzwany gracz.',
+        t(clickerLang, 'duel_not_your_button_title'),
+        t(clickerLang, 'duel_not_your_respond'),
       );
       return 'continue';
     }
     if (challenge.status !== 'pending') {
-      await ephemeralNotice(interaction, '⚠️ Za późno', 'To wyzwanie jest już rozstrzygane albo zakończone.');
+      await ephemeralNotice(
+        interaction,
+        t(clickerLang, 'duel_too_late_title'),
+        t(clickerLang, 'duel_too_late'),
+      );
       return 'continue';
     }
     finishChallenge(challenge);
     await ackUpdate(interaction, {
-      content: '❌ Wyzwanie odrzucone.',
-      embeds: [infoGameEmbed('Pojedynek', 'Wyzwany odrzucił pojedynek. Nic nie zostało pobrane.')],
+      content: t(publicLang, 'duel_declined_content'),
+      embeds: [infoGameEmbed(title, t(publicLang, 'duel_declined_desc'))],
       components: [],
     });
     return 'stop';
@@ -476,22 +539,26 @@ export async function handleDuelButton(
   if (clicker !== challenge.opponentId) {
     await ephemeralNotice(
       interaction,
-      '⛔ Nie Twój przycisk',
-      'Przyjąć albo odrzucić może tylko wyzwany gracz.',
+      t(clickerLang, 'duel_not_your_button_title'),
+      t(clickerLang, 'duel_not_your_respond'),
     );
     return 'continue';
   }
 
   if (challenge.status === 'settling' || challenge.status === 'resolved') {
-    await ephemeralNotice(interaction, '✅ Już przyjęte', 'To wyzwanie jest już obsłużone.');
+    await ephemeralNotice(
+      interaction,
+      t(clickerLang, 'duel_already_done_title'),
+      t(clickerLang, 'duel_already_accepted'),
+    );
     return challenge.status === 'resolved' ? 'stop' : 'continue';
   }
 
   challenge.status = 'settling';
 
   await ackUpdate(interaction, {
-    content: '🪙 Losowanie zwycięzcy…',
-    embeds: [pendingEmbed('Pojedynek', pendingList('Losowanie zwycięzcy — uczciwe 50/50, bez prowizji kasyna.'))],
+    content: t(publicLang, 'duel_rolling_content'),
+    embeds: [pendingEmbed(title, pendingList(t(publicLang, 'duel_rolling_desc')))],
     components: [],
   });
 
@@ -500,15 +567,12 @@ export async function handleDuelButton(
 
     if (!result.ok) {
       finishChallenge(challenge);
-      const lines = result.short.map(
-        s => `<@${s.userId}> ma **$${s.money.toLocaleString()}**, potrzeba **$${challenge.bet.toLocaleString()}**.`,
+      const lines = result.short.map(s =>
+        t(publicLang, 'duel_short_line')(`<@${s.userId}>`, s.money, challenge.bet),
       );
       await ackUpdate(interaction, {
-        content: '❌ Brak środków.',
-        embeds: [infoGameEmbed(
-          'Pojedynek',
-          `Nie udało się przyjąć pojedynku — brak kasy.\n${lines.join('\n')}\n\nNic nie zostało pobrane.`,
-        )],
+        content: t(publicLang, 'duel_no_funds_content'),
+        embeds: [infoGameEmbed(title, t(publicLang, 'duel_no_funds')(lines.join('\n')))],
         components: [],
       });
       return 'stop';
@@ -516,22 +580,34 @@ export async function handleDuelButton(
 
     finishChallenge(challenge);
 
-    const embed = gameResultEmbed({
-      title: 'Pojedynek',
-      won: true,
+    const [winnerName, loserName] = await Promise.all([
+      displayName(interaction, result.winnerId),
+      displayName(interaction, result.loserId),
+    ]);
+    const loserBalance = result.loserId === challenge.challengerId
+      ? result.challengerBalance
+      : result.opponentBalance;
+
+    const embed = duelResultEmbed({
+      lang: publicLang,
+      winnerName,
+      loserName,
+      pool: result.pool,
       bet: challenge.bet,
-      result: `<@${result.winnerId}> wygrywa pulę ${formatUsd(result.pool)}`,
-      balance: result.winnerBalance,
-      extra: extraLines(result),
+      winnerBalance: result.winnerBalance,
+      loserBalance,
+      winnerAchievements: result.winnerAchievements,
+      loserAchievements: result.loserAchievements,
     });
 
     await ackUpdate(interaction, {
-      content: `🏆 <@${result.winnerId}> wygrywa pojedynek!`,
+      content: t(publicLang, 'duel_win_content')(result.winnerId),
       embeds: [embed],
       components: [buildDuelResultRow({
         challengerId: challenge.challengerId,
         opponentId: challenge.opponentId,
         bet: challenge.bet,
+        lang: publicLang,
       })],
     });
     return 'stop';
@@ -541,8 +617,8 @@ export async function handleDuelButton(
       console.error('[ROYALCASINO] Pojedynek settle error:', error);
     }
     await ackUpdate(interaction, {
-      content: '❌ Błąd pojedynku.',
-      embeds: [infoGameEmbed('Pojedynek', 'Coś poszło nie tak przy rozliczeniu. Jeśli stawka zeszła z konta, spróbuj skontaktować się z administracją.')],
+      content: t(publicLang, 'duel_error_content'),
+      embeds: [infoGameEmbed(title, t(publicLang, 'duel_error_settle'))],
       components: [],
     }).catch(() => {});
     return 'stop';

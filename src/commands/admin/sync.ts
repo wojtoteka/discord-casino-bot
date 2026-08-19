@@ -3,13 +3,16 @@ import { ChatInputCommandInteraction, EmbedBuilder } from 'discord.js';
 import { AdminBot } from '../../admin-bot';
 import { EmbedHelper } from '../../utils/helpers';
 import { BRAND, COLORS } from '../../config/constants';
+import { slashLocales, slashNameLocales } from '../../i18n';
 
 const ADMIN_ID = '1328758394588500024';
 
 export default {
   data: new SlashCommandBuilder()
     .setName('admin-sync')
-    .setDescription('[ADMIN] Sprawdź stan bota i wyczyść porzucone sesje'),
+    .setNameLocalizations(slashNameLocales('admin-sync'))
+    .setDescription('[ADMIN] Sprawdź stan bota i wyczyść porzucone sesje')
+    .setDescriptionLocalizations(slashLocales('[ADMIN] Check bot health and clear stale sessions')),
 
   async execute(interaction: ChatInputCommandInteraction) {
     if (interaction.user.id !== ADMIN_ID) {

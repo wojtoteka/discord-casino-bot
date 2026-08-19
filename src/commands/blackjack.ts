@@ -7,13 +7,18 @@ import { formatAchievementNamesInline } from '../utils/achievements';
 import { withOwner } from '../utils/components';
 import { BlackjackGame } from '../utils/games';
 import { formatUsd, gameResultEmbed, infoGameEmbed, pendingEmbed, pendingList, playAgainRow } from '../utils/embeds';
+import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
+import { InsufficientFundsError } from '../database/Database';
+import { withUserLock } from '../utils/moneyLock';
 
 const activeGames = new Map<string, BlackjackGame>();
 
-function bjPlayAgainRow(bet: number, userId: string) {
+function bjPlayAgainRow(bet: number, userId: string, lang: 'pl' | 'en') {
   return playAgainRow({
     customIdPlayAgain: withOwner(`play_again:blackjack:${bet}`, userId),
     customIdBalance: withOwner(`nav:balance:${userId}`, userId),
+    playAgainLabel: t(lang, 'btn_play_again'),
+    balanceLabel: t(lang, 'btn_balance'),
   });
 }
 
@@ -35,10 +40,13 @@ export default {
   data: new SlashCommandBuilder()
     .setName('blackjack')
     .setDescription('🃏 Zagraj w blackjacka - cel: 21 punktów!')
+    .setDescriptionLocalizations(slashLocales('Play blackjack — hit 21'))
     .addIntegerOption(option =>
       option
         .setName('zakład')
+        .setNameLocalizations(slashNameLocales('bet'))
         .setDescription('Kwota do postawienia (min. $100)')
+        .setDescriptionLocalizations(slashLocales('Amount to bet (min. $100)'))
         .setRequired(true)
         .setMinValue(100)
     ),
@@ -48,12 +56,13 @@ export default {
     const bet = interaction.options.getInteger('zakład', true);
     const userId = interaction.user.id;
 
+    const lang = await getUserLang(client.db, userId);
     const userData = await client.db.getUser(userId);
 
     if (!GameHelper.canAfford(userData.money, bet)) {
       const embed = EmbedHelper.errorEmbed(
-        '❌ Niewystarczające środki',
-        `Potrzebujesz **$${bet.toLocaleString()}** ale masz tylko **$${userData.money.toLocaleString()}**`
+        t(lang, 'insufficient_funds_title'),
+        t(lang, 'error_insufficient_funds')(bet, userData.money),
       );
       await interaction.reply({ embeds: [embed], flags: 64 });
       return;
@@ -61,8 +70,8 @@ export default {
 
     if (activeGames.has(userId)) {
       const embed = EmbedHelper.warningEmbed(
-        '⚠️ Gra w toku',
-        'Dokończ obecną grę w blackjacka zanim zaczniesz nową.'
+        t(lang, 'game_in_progress_title'),
+        t(lang, 'game_in_progress'),
       );
       await interaction.reply({ embeds: [embed], flags: 64 });
       return;
@@ -71,15 +80,33 @@ export default {
     const game = new BlackjackGame();
     activeGames.set(userId, game);
 
-    await client.db.updateMoney(userId, -bet);
+    try {
+      await withUserLock(userId, () => client.db.updateMoney(userId, -bet));
+    } catch (error) {
+      activeGames.delete(userId);
+      if (error instanceof InsufficientFundsError) {
+        const latest = await client.db.getUser(userId);
+        await interaction.reply({
+          embeds: [EmbedHelper.errorEmbed(
+            t(lang, 'insufficient_funds_title'),
+            t(lang, 'error_insufficient_funds')(bet, latest.money),
+          )],
+          flags: 64,
+        });
+        return;
+      }
+      throw error;
+    }
 
     const embed = createGameEmbed(game, bet);
     const buttons = createGameButtons();
 
     if (game.isPlayerBlackjack()) {
       const winnings = Math.floor(bet * 2.5);
-      await client.db.updateMoney(userId, winnings);
-      await client.db.recordGame(userId, 'blackjack', bet, winnings, 'win');
+      await withUserLock(userId, async () => {
+        await client.db.updateMoney(userId, winnings);
+        await client.db.recordGame(userId, 'blackjack', bet, winnings, 'win');
+      });
       const newAchievements = await client.db.checkAchievements(userId);
       activeGames.delete(userId);
 
@@ -99,14 +126,14 @@ export default {
             : undefined,
         ),
       });
-      await interaction.reply({ embeds: [blackjackEmbed], components: [bjPlayAgainRow(bet, userId)] });
+      await interaction.reply({ embeds: [blackjackEmbed], components: [bjPlayAgainRow(bet, userId, lang)] });
       return;
     }
 
     await interaction.reply({ embeds: [embed], components: [buttons] });
     const reply = await interaction.fetchReply();
 
-    const processingInteractions = new Set<string>();
+    let busy = false;
     let settled = false;
 
     const collector = reply.createMessageComponentCollector({
@@ -116,8 +143,8 @@ export default {
     });
 
     collector?.on('collect', async (buttonInteraction: any) => {
-      if (settled || processingInteractions.has(buttonInteraction.id)) return;
-      processingInteractions.add(buttonInteraction.id);
+      if (settled || busy) return;
+      busy = true;
 
       try {
         if (buttonInteraction.customId === 'hit') {
@@ -146,8 +173,8 @@ export default {
               balance: newData.money,
               details: handDetails(game, true),
             });
-            await buttonInteraction.update({ embeds: [bustEmbed], components: [bjPlayAgainRow(bet, userId)] });
-            collector?.stop();
+            await buttonInteraction.update({ embeds: [bustEmbed], components: [bjPlayAgainRow(bet, userId, lang)] });
+            collector.stop('bust');
             return;
           }
 
@@ -202,8 +229,8 @@ export default {
             }
 
             activeGames.delete(userId);
-            await buttonInteraction.update({ embeds: [resultEmbed], components: [bjPlayAgainRow(bet, userId)] });
-            collector?.stop();
+            await buttonInteraction.update({ embeds: [resultEmbed], components: [bjPlayAgainRow(bet, userId, lang)] });
+            collector.stop('twentyone');
             return;
           }
 
@@ -267,13 +294,14 @@ export default {
           }
 
           activeGames.delete(userId);
-          await buttonInteraction.update({ embeds: [resultEmbed], components: [bjPlayAgainRow(bet, userId)] });
+          await buttonInteraction.update({ embeds: [resultEmbed], components: [bjPlayAgainRow(bet, userId, lang)] });
+          collector.stop('stand');
         }
       } catch (error: any) {
         if (error?.code === 10062) return;
         throw error;
       } finally {
-        processingInteractions.delete(buttonInteraction.id);
+        busy = false;
       }
     });
 
@@ -294,7 +322,7 @@ export default {
         });
 
         try {
-          await interaction.editReply({ embeds: [timeoutEmbed], components: [bjPlayAgainRow(bet, userId)] });
+          await interaction.editReply({ embeds: [timeoutEmbed], components: [bjPlayAgainRow(bet, userId, lang)] });
         } catch {
           // Ignore error if message was already deleted
         }

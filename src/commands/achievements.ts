@@ -2,37 +2,27 @@ import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction } from 'discord.js';
 import { CasinoBot } from '../index';
 import { EmbedHelper } from '../utils/helpers';
-
-const ACHIEVEMENT_DATA: { [key: string]: { name: string; desc: string; emoji: string; reward?: string } } = {
-  'first_game': { name: 'Pierwszy Krok', desc: 'Zagraj swoją pierwszą grę', emoji: '🎮', reward: '+10 XP' },
-  'games_10': { name: 'Gracz', desc: 'Zagraj 10 gier', emoji: '🎲', reward: '+15 XP' },
-  'games_50': { name: 'Weteran', desc: 'Zagraj 50 gier', emoji: '🎯', reward: '+25 XP' },
-  'games_100': { name: 'Legenda', desc: 'Zagraj 100 gier', emoji: '👑', reward: '+50 XP' },
-  'first_win': { name: 'Pierwsza Wygrana', desc: 'Wygraj swoją pierwszą grę', emoji: '✨', reward: '+10 XP' },
-  'wins_10': { name: 'Szczęściarz', desc: 'Wygraj 10 gier', emoji: '🍀', reward: '+20 XP' },
-  'wins_50': { name: 'Mistrz', desc: 'Wygraj 50 gier', emoji: '⭐', reward: '+40 XP' },
-  'level_5': { name: 'Poziom 5', desc: 'Osiągnij poziom 5', emoji: '📊', reward: '$1,000' },
-  'level_10': { name: 'Poziom 10', desc: 'Osiągnij poziom 10', emoji: '📈', reward: '$5,000' },
-  'level_25': { name: 'Poziom 25', desc: 'Osiągnij poziom 25', emoji: '🚀', reward: '$25,000' },
-  'millionaire': { name: 'Milioner', desc: 'Posiadaj $1,000,000', emoji: '💎', reward: 'Legenda!' },
-  'big_win': { name: 'Wielka Wygrana', desc: 'Wygraj $10,000 w jednej grze', emoji: '💰', reward: '+50 XP' },
-  'streak_7': { name: 'Oddany Gracz', desc: '7-dniowy streak daily', emoji: '🔥', reward: '$5,000' },
-  'high_roller': { name: 'High Roller', desc: 'Postaw łącznie $100,000', emoji: '🎰', reward: 'VIP Status' },
-};
+import { ACHIEVEMENT_NAMES, formatAchievementReward } from '../utils/achievements';
+import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
 
 export default {
   data: new SlashCommandBuilder()
     .setName('achievementy')
+    .setNameLocalizations(slashNameLocales('achievements'))
     .setDescription('🏅 Zobacz wszystkie osiągnięcia do zdobycia')
+    .setDescriptionLocalizations(slashLocales('Browse all achievements'))
     .addUserOption(option =>
       option
         .setName('użytkownik')
+        .setNameLocalizations(slashNameLocales('user'))
         .setDescription('Zobacz osiągnięcia innego gracza')
-        .setRequired(false)
+        .setDescriptionLocalizations(slashLocales('View another player achievements'))
+        .setRequired(false),
     ),
 
   async execute(interaction: ChatInputCommandInteraction) {
     const client = interaction.client as CasinoBot;
+    const lang = await getUserLang(client.db, interaction.user.id);
     const targetUser = interaction.options.getUser('użytkownik') || interaction.user;
     const userId = targetUser.id;
 
@@ -40,49 +30,47 @@ export default {
 
     try {
       const unlockedAchievements = await client.db.getUserAchievements(userId);
-      const totalAchievements = Object.keys(ACHIEVEMENT_DATA).length;
+      const totalAchievements = Object.keys(ACHIEVEMENT_NAMES).length;
+      const pct = Math.floor((unlockedAchievements.length / totalAchievements) * 100);
 
       const embed = EmbedHelper.goldEmbed(
-        `🏆 Osiągnięcia — ${targetUser.username}`,
-        `**Postęp:** ${unlockedAchievements.length}/${totalAchievements} (${Math.floor((unlockedAchievements.length / totalAchievements) * 100)}%)`,
+        t(lang, 'ach_title')(targetUser.username),
+        t(lang, 'ach_progress')(unlockedAchievements.length, totalAchievements, pct),
       );
 
-      // Group achievements by category
-      const categories = {
-        '🎮 Gracz': ['first_game', 'games_10', 'games_50', 'games_100'],
-        '🏆 Wygrywający': ['first_win', 'wins_10', 'wins_50'],
-        '📊 Poziomy': ['level_5', 'level_10', 'level_25'],
-        '💎 Specjalne': ['millionaire', 'big_win', 'streak_7', 'high_roller'],
+      const categories: Record<string, string[]> = {
+        [t(lang, 'ach_cat_player')]: ['first_game', 'games_10', 'games_50', 'games_100'],
+        [t(lang, 'ach_cat_wins')]: ['first_win', 'wins_10', 'wins_50'],
+        [t(lang, 'ach_cat_levels')]: ['level_5', 'level_10', 'level_25'],
+        [t(lang, 'ach_cat_special')]: ['millionaire', 'big_win', 'streak_7', 'high_roller'],
       };
 
       for (const [category, achievementIds] of Object.entries(categories)) {
         const achievementsText = achievementIds.map(id => {
-          const ach = ACHIEVEMENT_DATA[id];
+          const ach = ACHIEVEMENT_NAMES[id];
           const unlocked = unlockedAchievements.includes(id);
-          
+          const reward = formatAchievementReward(ach);
+          const rewardLine = reward ? `\n${t(lang, 'ach_reward')}: ${reward}` : '';
           if (unlocked) {
-            return `${ach.emoji} **${ach.name}** ✅\n*${ach.desc}*`;
-          } else {
-            return `🔒 **${ach.name}**\n*${ach.desc}*`;
+            return `${ach.emoji} **${ach.name}** ✅\n*${ach.description}*${rewardLine}`;
           }
+          return `🔒 **${ach.name}**\n*${ach.description}*${rewardLine}`;
         }).join('\n\n');
 
         embed.addFields({
           name: category,
           value: achievementsText,
-          inline: false
+          inline: false,
         });
       }
 
-      embed.setFooter({
-        text: `Graj w gry, aby odblokowywać osiągnięcia.`,
-      });
+      embed.setFooter({ text: t(lang, 'ach_footer') });
       embed.setTimestamp();
 
       await interaction.editReply({ embeds: [embed] });
     } catch (error) {
       console.error('Błąd achievementów:', error);
-      await interaction.editReply({ content: '❌ Błąd podczas pobierania osiągnięć!' });
+      await interaction.editReply({ content: t(lang, 'error_generic') });
     }
   },
 };

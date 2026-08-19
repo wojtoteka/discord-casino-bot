@@ -5,10 +5,10 @@ import {
   ButtonStyle,
 } from 'discord.js';
 import { BRAND, COLORS } from '../config/constants';
+import { t, type Lang } from '../i18n';
 
 const TITLE_SEP = ' × ';
 const BRAND_LABEL = 'RoyalCasino';
-const LIST_MARK = '》';
 
 /** Strip leading emoji / variation selectors so titles stay `RoyalCasino × Ruletka`. */
 export function stripLeadingDecor(text: string): string {
@@ -43,10 +43,16 @@ function unwrapBold(value: string): string {
   return wrapped ? wrapped[1] : trimmed;
 }
 
-export function listLine(label: string, value: string): string {
+function emphasizeValue(value: string): string {
   const inner = unwrapBold(value);
-  const display = (inner.includes('**') || inner.includes('`')) ? inner : `**${inner}**`;
-  return `${LIST_MARK} ${label}: ${display}`;
+  if (!inner) return inner;
+  if (inner.includes('**') || inner.includes('`') || inner.includes('<@')) return inner;
+  return `**${inner}**`;
+}
+
+/** Scannable `Label: **value**` line — not a log dump. */
+export function listLine(label: string, value: string): string {
+  return `${label}: ${emphasizeValue(value)}`;
 }
 
 export function listLines(entries: Array<[string, string]>): string {
@@ -64,7 +70,7 @@ export function asQuote(text: string): string {
     .join('\n');
 }
 
-/** Drop `emoji × **Label:**` so extras don't mix × with 》. */
+/** Drop `emoji × **Label:**` so extras don't mix × with result lines. */
 function cleanExtraLine(line: string): string {
   return line.replace(
     /^(?:(?:\p{Extended_Pictographic}|\p{Emoji_Presentation})\p{Emoji_Modifier}?(?:\uFE0F)?(?:\u200D(?:\p{Extended_Pictographic}|\p{Emoji_Presentation})(?:\uFE0F)?)*)+\s*[×•]\s*(?=\*\*)/u,
@@ -104,16 +110,18 @@ function resultDescription(params: {
   extra?: string;
   intro?: string;
   details?: Array<[string, string]>;
+  lang?: Lang;
 }): string {
+  const lang = params.lang ?? 'pl';
   const parts: string[] = [];
   if (params.intro) parts.push(params.intro, '');
   parts.push(
-    listLine('Zakład', params.bet),
-    listLine('Wynik', params.result),
-    listLine('Saldo', params.balance),
+    listLine(t(lang, 'label_bet'), params.bet),
+    listLine(t(lang, 'label_result'), params.result),
+    listLine(t(lang, 'label_balance'), params.balance),
   );
   if (params.details && params.details.length > 0) {
-    parts.push(listLines(params.details));
+    parts.push('', listLines(params.details));
   }
   if (params.extra) {
     const extra = cleanExtra(params.extra);
@@ -132,6 +140,7 @@ export function gameResultEmbed(params: {
   intro?: string;
   details?: Array<[string, string]>;
   unit?: 'money' | 'credits';
+  lang?: Lang;
 }): EmbedBuilder {
   const betValue = params.unit === 'credits' ? `${params.bet}` : formatUsd(params.bet);
   const balanceValue = params.unit === 'credits' ? `${params.balance}` : formatUsd(params.balance);
@@ -146,6 +155,7 @@ export function gameResultEmbed(params: {
       extra: params.extra,
       intro: params.intro,
       details: params.details,
+      lang: params.lang,
     }))
     .setFooter({ text: BRAND.footerText })
     .setTimestamp();
@@ -168,6 +178,7 @@ export function infoGameEmbed(
     result: string;
     balance: number;
     details?: Array<[string, string]>;
+    lang?: Lang;
   },
 ): EmbedBuilder {
   const body = stats
@@ -177,6 +188,7 @@ export function infoGameEmbed(
       balance: formatUsd(stats.balance),
       extra: description,
       details: stats.details,
+      lang: stats.lang,
     })
     : description;
 

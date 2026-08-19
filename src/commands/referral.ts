@@ -2,110 +2,110 @@
 import { ChatInputCommandInteraction } from 'discord.js';
 import { CasinoBot } from '../index';
 import { EmbedHelper } from '../utils/helpers';
+import { ECONOMY } from '../config/constants';
+import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
+import { listLine } from '../utils/embeds';
 
 export default {
   data: new SlashCommandBuilder()
     .setName('polecenie')
+    .setNameLocalizations(slashNameLocales('referral'))
     .setDescription('🎁 System poleceń - zaproś znajomych i zdobądź $2,000!')
+    .setDescriptionLocalizations(slashLocales('Referral system — invite a friend and you both get a bonus'))
     .addStringOption(option =>
       option
         .setName('kod')
+        .setNameLocalizations(slashNameLocales('code'))
         .setDescription('Wpisz kod polecenia od znajomego')
-        .setRequired(false)
+        .setDescriptionLocalizations(slashLocales('Enter a referral code from a friend'))
+        .setRequired(false),
     ),
 
   async execute(interaction: ChatInputCommandInteraction) {
     const client = interaction.client as CasinoBot;
     const userId = interaction.user.id;
+    const lang = await getUserLang(client.db, userId);
     const inputCode = interaction.options.getString('kod');
+    const bonus = ECONOMY.referralBonus;
 
     const userData = await client.db.getUser(userId);
 
-    // If user provided a code - use it
     if (inputCode) {
       const code = inputCode.toUpperCase().trim();
-
-      // Find referrer
       const referrer = await client.db.getUserByReferralCode(code);
       if (!referrer) {
         const embed = EmbedHelper.errorEmbed(
-          '❌ Nieprawidłowy Kod',
-          `Kod **\`${code}\`** nie istnieje!\nSprawdź czy wpisałeś go poprawnie.`
+          t(lang, 'referral_invalid_title'),
+          t(lang, 'referral_invalid')(code),
         );
         await interaction.reply({ embeds: [embed], flags: 64 });
         return;
       }
 
       const result = await client.db.useReferralCode(userId, referrer.user_id);
-
       if (!result.success) {
         const embed = EmbedHelper.errorEmbed(
-          '❌ Nie Można Użyć Kodu',
-          result.error || 'Nieznany błąd.'
+          t(lang, 'referral_cannot_title'),
+          result.error || t(lang, 'error_generic'),
         );
         await interaction.reply({ embeds: [embed], flags: 64 });
         return;
       }
 
-      // Success! Notify both parties
       const embed = EmbedHelper.successEmbed(
-        '🎁 Polecenie',
-        `Kod polecenia wykorzystany.\n\n` +
-        `💰 × **Otrzymałeś:** +$2,000\n` +
-        `💰 × **<@${referrer.user_id}> otrzymał:** +$2,000\n\n` +
-        `Dziękujemy za dołączenie.`
+        t(lang, 'referral_used_title'),
+        [
+          t(lang, 'referral_you_got')(bonus),
+          t(lang, 'referral_they_got')(referrer.user_id, bonus),
+          '',
+          t(lang, 'referral_thanks'),
+        ].join('\n'),
       );
       await interaction.reply({ embeds: [embed] });
 
-      // Send DM to referrer
       try {
         const referrerUser = await client.users.fetch(referrer.user_id);
+        const referrerLang = await getUserLang(client.db, referrer.user_id);
         const dmEmbed = EmbedHelper.successEmbed(
-          '🎁 Ktoś użył Twojego kodu',
-          `**${interaction.user.username}** użył Twojego kodu polecenia.\n\n` +
-          `💰 × **Otrzymałeś:** +$2,000`,
+          t(referrerLang, 'referral_dm_title'),
+          t(referrerLang, 'referral_dm')(interaction.user.username, bonus),
         );
         await referrerUser.send({ embeds: [dmEmbed] });
       } catch {
-        // Can't send DM - user has DMs disabled
+        // DMs disabled
       }
-
       return;
     }
 
-    // No code provided - show user's referral info
     const referralCode = await client.db.ensureReferralCode(userId);
     const referralCount = await client.db.getReferralCount(userId);
-    const totalEarned = referralCount * 2000;
+    const totalEarned = referralCount * bonus;
 
     const embed = EmbedHelper.goldEmbed(
-      '🎁 System poleceń',
-      `Zaproś znajomych do kasyna — oboje otrzymacie **$2,000**.`,
+      t(lang, 'referral_title'),
+      t(lang, 'referral_intro')(bonus),
     );
     embed.addFields(
-        {
-          name: '🔑 Twój kod polecenia',
-          value: `\`\`\`\n${referralCode}\n\`\`\``,
-          inline: false
-        },
-        {
-          name: '📊 Statystyki',
-          value:
-            `> 👥 Polecono osób: **${referralCount}**\n` +
-            `> 💰 Zarobiono z poleceń: **$${totalEarned.toLocaleString()}**\n` +
-            `> ${userData.referred_by ? '✅ Użyłeś kodu polecenia' : '❌ Nie użyłeś jeszcze kodu polecenia'}`,
-          inline: false
-        },
-        {
-          name: '📖 Jak to działa',
-          value:
-            '> 1️⃣ Wyślij swój kod znajomemu\n' +
-            '> 2️⃣ Znajomy wpisuje `/polecenie kod:TWÓJ_KOD`\n' +
-            '> 3️⃣ Oboje otrzymujecie **$2,000**\n' +
-            '> Każdy użytkownik może użyć kodu tylko **raz**',
-          inline: false
-        }
-      );
+      {
+        name: t(lang, 'referral_your_code'),
+        value: `\`\`\`\n${referralCode}\n\`\`\``,
+        inline: false,
+      },
+      {
+        name: t(lang, 'referral_stats'),
+        value: [
+          listLine(t(lang, 'referral_count')(referralCount).split(':')[0], String(referralCount)),
+          listLine(t(lang, 'credits_received'), `$${totalEarned.toLocaleString()}`),
+          userData.referred_by ? t(lang, 'referral_used_yes') : t(lang, 'referral_used_no'),
+        ].join('\n'),
+        inline: false,
+      },
+      {
+        name: t(lang, 'referral_how'),
+        value: t(lang, 'referral_how_body')(bonus).split('\n').map(l => `> ${l}`).join('\n'),
+        inline: false,
+      },
+    );
 
     await interaction.reply({ embeds: [embed] });
   },

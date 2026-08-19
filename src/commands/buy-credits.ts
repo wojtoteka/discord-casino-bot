@@ -2,59 +2,83 @@
 import { ChatInputCommandInteraction } from 'discord.js';
 import { CasinoBot } from '../index';
 import { EmbedHelper } from '../utils/helpers';
+import { ECONOMY } from '../config/constants';
+import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
+import { formatUsd, listLine } from '../utils/embeds';
+import { InsufficientFundsError } from '../database/Database';
+import { withUserLock } from '../utils/moneyLock';
 
 export default {
   data: new SlashCommandBuilder()
     .setName('kup-kredyty')
+    .setNameLocalizations(slashNameLocales('buy-credits'))
     .setDescription('🎟️ Kup kredyty za pieniądze')
+    .setDescriptionLocalizations(slashLocales('Buy credits with cash'))
     .addIntegerOption(option =>
       option
         .setName('ilość')
+        .setNameLocalizations(slashNameLocales('amount'))
         .setDescription('Liczba kredytów do kupienia')
+        .setDescriptionLocalizations(slashLocales('How many credits to buy'))
         .setRequired(true)
-        .setMinValue(1)
+        .setMinValue(1),
     ),
 
   async execute(interaction: ChatInputCommandInteraction) {
     const client = interaction.client as CasinoBot;
     const amount = interaction.options.getInteger('ilość', true);
     const userId = interaction.user.id;
-    
-    const userData = await client.db.getUser(userId);
-    const defaultBet = parseInt(process.env.DEFAULT_BET || '100');
-    const cost = amount * defaultBet;
+    const lang = await getUserLang(client.db, userId);
+    const rate = ECONOMY.creditBuyRate;
+    const cost = amount * rate;
 
+    const userData = await client.db.getUser(userId);
     if (userData.money < cost) {
       const embed = EmbedHelper.errorEmbed(
-        '❌ Niewystarczające Środki',
-        `Potrzebujesz **$${cost.toLocaleString()}** ale masz tylko **$${userData.money.toLocaleString()}**\n\n` +
-        `💡 Cena: **$${defaultBet.toLocaleString()}** za kredyt`
+        t(lang, 'insufficient_funds_title'),
+        t(lang, 'credits_need_money')(cost, userData.money, rate),
       );
       await interaction.reply({ embeds: [embed], flags: 64 });
       return;
     }
 
-    // Process transaction
-    await client.db.updateMoney(userId, -cost);
-    await client.db.updateCredits(userId, amount);
+    try {
+      const after = await withUserLock(userId, async () => {
+        await client.db.updateMoney(userId, -cost);
+        try {
+          await client.db.updateCredits(userId, amount);
+        } catch (error) {
+          await client.db.updateMoney(userId, cost).catch(() => {});
+          throw error;
+        }
+        return client.db.getUser(userId);
+      });
 
-    const newBalance = userData.money - cost;
-    const newCredits = userData.credits + amount;
-
-    const embed = EmbedHelper.successEmbed(
-      '🎟️ Kredyty zakupione',
-      `🎟️ × **Kupiono:** ${amount.toLocaleString()}\n` +
-      `💸 × **Koszt:** $${cost.toLocaleString()}\n` +
-      `💲 × **Cena/szt:** $${defaultBet.toLocaleString()}`,
-    );
-    embed.addFields(
-      {
-        name: '📊 Nowy stan konta',
-        value: `💰 Pieniądze: **$${newBalance.toLocaleString()}**\n🎟️ Kredyty: **${newCredits.toLocaleString()}**`,
-        inline: false
+      const embed = EmbedHelper.successEmbed(
+        t(lang, 'credits_buy_title'),
+        [
+          listLine(t(lang, 'credits_bought'), String(amount)),
+          listLine(t(lang, 'credits_cost'), formatUsd(cost)),
+          listLine(t(lang, 'credits_unit_price'), formatUsd(rate)),
+          '',
+          listLine(t(lang, 'credits_money'), formatUsd(after.money)),
+          listLine(t(lang, 'credits_label'), String(after.credits)),
+        ].join('\n'),
+      );
+      await interaction.reply({ embeds: [embed] });
+    } catch (error) {
+      if (error instanceof InsufficientFundsError) {
+        const latest = await client.db.getUser(userId);
+        await interaction.reply({
+          embeds: [EmbedHelper.errorEmbed(
+            t(lang, 'insufficient_funds_title'),
+            t(lang, 'credits_need_money')(cost, latest.money, rate),
+          )],
+          flags: 64,
+        });
+        return;
       }
-    );
-
-    await interaction.reply({ embeds: [embed] });
+      throw error;
+    }
   },
 };

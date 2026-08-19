@@ -7,12 +7,16 @@ import {
 } from 'discord.js';
 import { CasinoBot } from '../index';
 import { EmbedHelper, GameHelper } from '../utils/helpers';
-import { getUserLang, t } from '../i18n';
+import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
 import { GAMES } from '../config/constants';
 import { formatUsd, pendingEmbed, pendingList } from '../utils/embeds';
 import { InsufficientFundsError } from '../database/Database';
 
-/** Build the 5×5 tile grid + optional cashout button */
+const GRID = GAMES.mines.gridSize;
+const COLS = 5;
+const TILE_ROWS = GRID / COLS;
+
+/** Row 0: cashout. Rows 1–4: tiles 0–19. Discord max 5 rows. */
 function buildMinesGrid(
   session: import('../database/Database').MinesSession,
   revealAll: boolean,
@@ -22,28 +26,37 @@ function buildMinesGrid(
 ): ActionRowBuilder<ButtonBuilder>[] {
   const rows: ActionRowBuilder<ButtonBuilder>[] = [];
 
-  for (let row = 0; row < 5; row++) {
+  const cashRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`mines:cashout:${sessionId}:${ownerId}`)
+      .setLabel('💸 Wypłać')
+      .setStyle(ButtonStyle.Success)
+      .setDisabled(forceDisabled || revealAll || session.revealed_positions.length === 0),
+  );
+  rows.push(cashRow);
+
+  for (let row = 0; row < TILE_ROWS; row++) {
     const actionRow = new ActionRowBuilder<ButtonBuilder>();
-    for (let col = 0; col < 5; col++) {
-      const pos        = row * 5 + col;
-      const isMine     = session.mines_positions.includes(pos);
+    for (let col = 0; col < COLS; col++) {
+      const pos = row * COLS + col;
+      const isMine = session.mines_positions.includes(pos);
       const isRevealed = session.revealed_positions.includes(pos);
 
-      let label    = '❓';
-      let style    = ButtonStyle.Secondary;
+      let label = '❓';
+      let style = ButtonStyle.Secondary;
       let disabled = forceDisabled;
 
       if (isRevealed) {
-        label    = '✅';
-        style    = ButtonStyle.Success;
+        label = '✅';
+        style = ButtonStyle.Success;
         disabled = true;
       } else if (revealAll && isMine) {
-        label    = '💣';
-        style    = ButtonStyle.Danger;
+        label = '💣';
+        style = ButtonStyle.Danger;
         disabled = true;
       } else if (revealAll) {
-        label    = '⬜';
-        style    = ButtonStyle.Secondary;
+        label = '⬜';
+        style = ButtonStyle.Secondary;
         disabled = true;
       }
 
@@ -58,50 +71,6 @@ function buildMinesGrid(
     rows.push(actionRow);
   }
 
-  // Cashout button (row index 5 — Discord allows max 5 rows, so we replace last row)
-  // We keep only 4 tile rows visible (20 tiles) plus 1 cashout row when !revealAll.
-  // Actually Discord permits 5 rows so we use rows 0–3 for tiles (20 tiles / 4 rows of 5)
-  // and row 4 for cashout. Show only first 4 tile rows when cashout is needed.
-  // Strategy: show all 5 rows of tiles, cashout as 6th... not allowed.
-  // Fix: use a separate message + edit to show cashout, OR embed the cashout within row 5.
-  // We cap at 5 rows: rows 0-3 show tiles 0-19, row 4 shows tiles 20-24 shrunk + cashout.
-  // Simplest compliant approach: 5 rows tiles (no cashout when game active, user uses /miny cashout).
-  // → We ADD cashout as button only if revealAll is false AND totalRows ≤ 5.
-  // Since 5 rows × 5 = 25 tiles fill all 5 rows, cashout cannot be a 6th row.
-  // Solution: Use row 4 (last 5 tiles 20–24) as 4 tile buttons + 1 cashout button.
-  if (!revealAll && !forceDisabled) {
-    // Replace last action row with 4 tiles (20-23) + cashout at pos 24
-    const lastRow = new ActionRowBuilder<ButtonBuilder>();
-    for (let col = 0; col < 4; col++) {
-      const pos        = 20 + col;
-      const isMine     = session.mines_positions.includes(pos);
-      const isRevealed = session.revealed_positions.includes(pos);
-
-      let label = '❓';
-      let style = ButtonStyle.Secondary;
-      let dis   = false;
-
-      if (isRevealed) { label = '✅'; style = ButtonStyle.Success; dis = true; }
-
-      lastRow.addComponents(
-        new ButtonBuilder()
-          .setCustomId(`mines:reveal:${sessionId}:${pos}:${ownerId}`)
-          .setLabel(label)
-          .setStyle(style)
-          .setDisabled(dis),
-      );
-    }
-    // Cashout button
-    lastRow.addComponents(
-      new ButtonBuilder()
-        .setCustomId(`mines:cashout:${sessionId}:${ownerId}`)
-        .setLabel('💸 Wypłać')
-        .setStyle(ButtonStyle.Primary)
-        .setDisabled(session.revealed_positions.length === 0),
-    );
-    rows[4] = lastRow;
-  }
-
   return rows;
 }
 
@@ -110,21 +79,27 @@ export { buildMinesGrid };
 export default {
   data: new SlashCommandBuilder()
     .setName('miny')
+    .setNameLocalizations(slashNameLocales('mines'))
     .setDescription('💣 Gra Miny — odkrywaj kafelki, unikaj min, wypłać w odpowiednim momencie!')
+    .setDescriptionLocalizations(slashLocales('Mines — reveal tiles, avoid mines, cash out'))
     .addIntegerOption(option =>
       option
         .setName('zakład')
+        .setNameLocalizations(slashNameLocales('bet'))
         .setDescription(`Kwota do postawienia (min. $${GAMES.mines.minBet})`)
+        .setDescriptionLocalizations(slashLocales(`Amount to bet (min. $${GAMES.mines.minBet})`))
         .setRequired(true)
         .setMinValue(GAMES.mines.minBet),
     )
     .addIntegerOption(option =>
       option
         .setName('miny')
-        .setDescription('Liczba min na planszy (1–5, domyślnie 3)')
+        .setNameLocalizations(slashNameLocales('mines'))
+        .setDescription(`Liczba min na planszy (1–${GAMES.mines.maxMines}, domyślnie 3)`)
+        .setDescriptionLocalizations(slashLocales(`Number of mines on the board (1–${GAMES.mines.maxMines}, default 3)`))
         .setRequired(false)
         .setMinValue(1)
-        .setMaxValue(5),
+        .setMaxValue(GAMES.mines.maxMines),
     ),
 
   async execute(interaction: ChatInputCommandInteraction) {
@@ -134,7 +109,7 @@ export default {
     const userId     = interaction.user.id;
     const lang       = await getUserLang(client.db, userId);
 
-    const userData = await client.db.getUser(userId); // cache hit — primed by blocked check
+    const userData = await client.db.getUser(userId);
 
     if (!GameHelper.canAfford(userData.money, bet)) {
       const embed = EmbedHelper.errorEmbed(
@@ -145,24 +120,21 @@ export default {
       return;
     }
 
-    // Defer BEFORE the active-session DB query so Discord acknowledges immediately
     await interaction.deferReply();
 
-    // Check no active session
     const existing = await client.db.getActiveMinesSession(userId);
     if (existing) {
-      const embed = EmbedHelper.warningEmbed('⚠️ Gra w toku', t(lang, 'mines_in_progress'));
+      const embed = EmbedHelper.warningEmbed(t(lang, 'game_in_progress_title'), t(lang, 'mines_in_progress'));
       await interaction.editReply({ embeds: [embed] });
       return;
     }
 
-    // Start session (bet deducted inside)
     let session;
     try {
       session = await client.db.startMinesSession(userId, bet, minesCount);
     } catch (error) {
       if ((error as { name?: string })?.name === 'ActiveMinesSessionError') {
-        const embed = EmbedHelper.warningEmbed('⚠️ Gra w toku', t(lang, 'mines_in_progress'));
+        const embed = EmbedHelper.warningEmbed(t(lang, 'game_in_progress_title'), t(lang, 'mines_in_progress'));
         await interaction.editReply({ embeds: [embed] });
         return;
       }
@@ -178,18 +150,18 @@ export default {
       throw error;
     }
 
-    const multiStr = client.db.calcMinesMultiplier(minesCount, 0).toFixed(2);
+    const multiStr = client.db.calcMinesMultiplier(session.mines_count, 0).toFixed(2);
     const potential = Math.floor(bet * parseFloat(multiStr));
 
     const embed = pendingEmbed(
       t(lang, 'mines_title'),
       pendingList(
-        'Odkrywaj kafelki — wypłać przed trafieniem miny.',
+        t(lang, 'mines_game_start')(session.mines_count, bet).split('\n')[1] ?? t(lang, 'mines_safe'),
         [
-          ['Zakład', formatUsd(bet)],
-          ['Miny', String(minesCount)],
-          ['Mnożnik', `${multiStr}x`],
-          ['Potencjalna wypłata', formatUsd(potential)],
+          [t(lang, 'label_bet'), formatUsd(bet)],
+          [t(lang, 'mines_label_mines'), String(session.mines_count)],
+          [t(lang, 'mines_label_multi'), `${multiStr}x`],
+          [t(lang, 'mines_label_potential'), formatUsd(potential)],
         ],
       ),
     );

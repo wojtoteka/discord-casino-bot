@@ -4,13 +4,14 @@ import { CasinoBot } from '../index';
 import { EmbedHelper, GameHelper } from '../utils/helpers';
 import { formatAchievementNamesInline } from '../utils/achievements';
 import { withOwner } from '../utils/components';
+import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
 import { formatUsd, gameResultEmbed, pendingEmbed, pendingList, playAgainRow } from '../utils/embeds';
+import { InsufficientFundsError } from '../database/Database';
+import { withUserLock } from '../utils/moneyLock';
 
 function generateCrashPoint(): number {
-  // House edge ~4%. Crash point follows exponential distribution.
   const e = 2 ** 32;
   const h = Math.floor(Math.random() * e);
-  // 4% instant crash
   if (h % 25 === 0) return 1.00;
   return Math.max(1.00, Math.floor((100 * e - h) / (e - h)) / 100);
 }
@@ -25,32 +26,50 @@ export default {
   data: new SlashCommandBuilder()
     .setName('crash')
     .setDescription('📈 Gra Crash - wypłać zanim spadnie!')
+    .setDescriptionLocalizations(slashLocales('Crash — cash out before it drops'))
     .addIntegerOption(option =>
       option
         .setName('zakład')
+        .setNameLocalizations(slashNameLocales('bet'))
         .setDescription('Kwota do postawienia (min. $100)')
+        .setDescriptionLocalizations(slashLocales('Amount to bet (min. $100)'))
         .setRequired(true)
-        .setMinValue(100)
+        .setMinValue(100),
     ),
 
   async execute(interaction: ChatInputCommandInteraction) {
     const client = interaction.client as CasinoBot;
     const bet = interaction.options.getInteger('zakład', true);
     const userId = interaction.user.id;
+    const lang = await getUserLang(client.db, userId);
 
     const userData = await client.db.getUser(userId);
 
     if (!GameHelper.canAfford(userData.money, bet)) {
       const embed = EmbedHelper.errorEmbed(
-        '❌ Niewystarczające środki',
-        `Potrzebujesz **$${bet.toLocaleString()}** ale masz tylko **$${userData.money.toLocaleString()}**`
+        t(lang, 'insufficient_funds_title'),
+        t(lang, 'error_insufficient_funds')(bet, userData.money),
       );
       await interaction.reply({ embeds: [embed], flags: 64 });
       return;
     }
 
-    // Take bet immediately
-    await client.db.updateMoney(userId, -bet);
+    try {
+      await withUserLock(userId, () => client.db.updateMoney(userId, -bet));
+    } catch (error) {
+      if (error instanceof InsufficientFundsError) {
+        const latest = await client.db.getUser(userId);
+        await interaction.reply({
+          embeds: [EmbedHelper.errorEmbed(
+            t(lang, 'insufficient_funds_title'),
+            t(lang, 'error_insufficient_funds')(bet, latest.money),
+          )],
+          flags: 64,
+        });
+        return;
+      }
+      throw error;
+    }
 
     const crashPoint = generateCrashPoint();
     let currentMultiplier = 1.00;
@@ -61,31 +80,33 @@ export default {
       .addComponents(
         new ButtonBuilder()
           .setCustomId('crash_cashout')
-          .setLabel('💸 Wypłać')
-          .setStyle(ButtonStyle.Success)
+          .setLabel(`💸 ${t(lang, 'crash_cashout')}`)
+          .setStyle(ButtonStyle.Success),
       );
 
     const disabledButton = new ActionRowBuilder<ButtonBuilder>()
       .addComponents(
         new ButtonBuilder()
           .setCustomId('crash_cashout')
-          .setLabel('💸 Wypłać')
+          .setLabel(`💸 ${t(lang, 'crash_cashout')}`)
           .setStyle(ButtonStyle.Success)
-          .setDisabled(true)
+          .setDisabled(true),
       );
 
     const againRow = playAgainRow({
       customIdPlayAgain: withOwner(`play_again:crash:${bet}`, userId),
       customIdBalance: withOwner(`nav:balance:${userId}`, userId),
+      playAgainLabel: t(lang, 'btn_play_again'),
+      balanceLabel: t(lang, 'btn_balance'),
     });
 
     const startEmbed = pendingEmbed(
-      'Crash',
+      t(lang, 'crash_title'),
       pendingList(
-        'Kliknij **Wypłać** zanim spadnie.',
+        t(lang, 'crash_prompt'),
         [
-          ['Mnożnik', `x${currentMultiplier.toFixed(2)}`],
-          ['Zakład', formatUsd(bet)],
+          [t(lang, 'crash_multi'), `x${currentMultiplier.toFixed(2)}`],
+          [t(lang, 'label_bet'), formatUsd(bet)],
         ],
       ) + `\n${getMultiplierBar(currentMultiplier)}`,
     );
@@ -93,42 +114,46 @@ export default {
     await interaction.reply({ embeds: [startEmbed], components: [cashOutButton] });
     const reply = await interaction.fetchReply();
 
+    // Long enough for a ~100x crash (~17 min of ticks). Timeout is NOT a loss.
     const collector = reply.createMessageComponentCollector({
       componentType: ComponentType.Button,
-      time: 60000,
-      filter: (i) => i.user.id === userId && i.customId === 'crash_cashout'
+      time: 20 * 60 * 1000,
+      filter: (i) => i.user.id === userId && i.customId === 'crash_cashout',
     });
 
-    collector?.on('collect', async (buttonInteraction) => {
-      if (crashed || cashed) return;
+    collector.on('collect', async (buttonInteraction) => {
+      if (cashed || crashed) return;
       cashed = true;
-      collector.stop();
+      collector.stop('cashed');
 
       const winnings = Math.floor(bet * currentMultiplier);
       const profit = winnings - bet;
-      await client.db.updateMoney(userId, winnings);
-      await client.db.recordGame(userId, 'crash', bet, winnings, 'win');
+
+      await withUserLock(userId, async () => {
+        await client.db.updateMoney(userId, winnings);
+        await client.db.recordGame(userId, 'crash', bet, winnings, 'win');
+      });
       const newAchievements = await client.db.checkAchievements(userId);
       const newData = await client.db.getUser(userId);
 
       let extra = getMultiplierBar(currentMultiplier);
       if (newAchievements.length > 0) {
-        extra += `\nNowe osiągnięcia: ${formatAchievementNamesInline(newAchievements)}`;
+        extra += t(lang, 'new_achievements')(formatAchievementNamesInline(newAchievements));
       }
 
       const embed = gameResultEmbed({
-        title: 'Crash',
+        title: t(lang, 'crash_title'),
         won: true,
         bet,
         result: `x${currentMultiplier.toFixed(2)} · +$${profit.toLocaleString()}`,
         balance: newData.money,
         extra,
+        lang,
       });
 
       await buttonInteraction.update({ embeds: [embed], components: [disabledButton, againRow] });
     });
 
-    // Multiplier growth loop
     const tick = async () => {
       if (cashed || crashed) return;
 
@@ -136,20 +161,24 @@ export default {
       currentMultiplier = Math.round(currentMultiplier * 100) / 100;
 
       if (currentMultiplier >= crashPoint) {
+        if (cashed) return;
         crashed = true;
-        collector?.stop();
+        collector.stop('crashed');
 
-        await client.db.recordGame(userId, 'crash', bet, 0, 'loss');
+        await withUserLock(userId, async () => {
+          await client.db.recordGame(userId, 'crash', bet, 0, 'loss');
+        });
         await client.db.checkAchievements(userId);
         const newData = await client.db.getUser(userId);
 
         const embed = gameResultEmbed({
-          title: 'Crash',
+          title: t(lang, 'crash_title'),
           won: false,
           bet,
-          result: `x${crashPoint.toFixed(2)} · -$${bet.toLocaleString()}`,
+          result: `x${crashPoint.toFixed(2)}`,
           balance: newData.money,
-          extra: `Spadło przy **x${crashPoint.toFixed(2)}**.`,
+          extra: t(lang, 'crash_fell')(`x${crashPoint.toFixed(2)}`),
+          lang,
         });
 
         try {
@@ -160,12 +189,12 @@ export default {
 
       const potentialWin = Math.floor(bet * currentMultiplier);
       const embed = pendingEmbed(
-        'Crash',
+        t(lang, 'crash_title'),
         pendingList(
-          'Rośnie... kliknij **Wypłać**.',
+          t(lang, 'crash_growing'),
           [
-            ['Mnożnik', `x${currentMultiplier.toFixed(2)}`],
-            ['Potencjalna wygrana', formatUsd(potentialWin)],
+            [t(lang, 'crash_multi'), `x${currentMultiplier.toFixed(2)}`],
+            [t(lang, 'crash_potential'), formatUsd(potentialWin)],
           ],
         ) + `\n${getMultiplierBar(currentMultiplier)}`,
       );
@@ -177,32 +206,11 @@ export default {
       setTimeout(tick, 1000 + Math.random() * 500);
     };
 
-    // Start after initial delay
     setTimeout(tick, 1500);
 
-    collector?.on('end', async () => {
-      if (!cashed && !crashed) {
-        // Timeout - treat as loss
-        crashed = true;
-        client.db.recordGame(userId, 'crash', bet, 0, 'loss').catch(() => {});
-        client.db.checkAchievements(userId).catch(() => {});
-
-        const newData = await client.db.getUser(userId).catch(() => null);
-        const embed = newData
-          ? gameResultEmbed({
-            title: 'Crash',
-            won: false,
-            bet,
-            result: 'Czas minął',
-            balance: newData.money,
-            extra: 'Nie zdążyłeś wypłacić. Zakład przepadł.',
-          })
-          : EmbedHelper.warningEmbed(
-            'Crash',
-            `Czas minął. Nie zdążyłeś wypłacić.\nZakład **$${bet.toLocaleString()}** przepadł.`,
-          );
-        interaction.editReply({ embeds: [embed], components: [disabledButton, againRow] }).catch(() => {});
-      }
+    collector.on('end', () => {
+      // Game ends only on crash point or cashout. A collector timeout must not
+      // record a loss while the round is still climbing.
     });
   },
 };

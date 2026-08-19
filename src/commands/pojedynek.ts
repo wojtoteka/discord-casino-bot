@@ -5,6 +5,7 @@ import {
 } from 'discord.js';
 import { CasinoBot } from '../index';
 import { GAMES } from '../config/constants';
+import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
 import { EmbedHelper, GameHelper } from '../utils/helpers';
 import { infoGameEmbed, pendingEmbed } from '../utils/embeds';
 import {
@@ -49,17 +50,23 @@ async function respondWarning(
 export default {
   data: new SlashCommandBuilder()
     .setName('pojedynek')
+    .setNameLocalizations(slashNameLocales('duel'))
     .setDescription('⚔️ Pojedynek PvP — rzuć wyzwanie innemu graczowi (50/50)')
+    .setDescriptionLocalizations(slashLocales('PvP duel — challenge another player (50/50)'))
     .addUserOption(option =>
       option
         .setName('użytkownik')
+        .setNameLocalizations(slashNameLocales('user'))
         .setDescription('Gracz, którego chcesz wyzwać')
+        .setDescriptionLocalizations(slashLocales('The player you want to challenge'))
         .setRequired(true),
     )
     .addIntegerOption(option =>
       option
         .setName('zakład')
+        .setNameLocalizations(slashNameLocales('bet'))
         .setDescription(`Stawka każdego gracza (min. $${MIN_BET.toLocaleString()})`)
+        .setDescriptionLocalizations(slashLocales(`Stake for each player (min. $${MIN_BET.toLocaleString()})`))
         .setRequired(true)
         .setMinValue(MIN_BET),
     ),
@@ -68,6 +75,19 @@ export default {
     const client = interaction.client as CasinoBot;
     const userId = interaction.user.id;
     const bet = interaction.options.getInteger('zakład', true);
+    const lang = await getUserLang(client.db, userId);
+
+    if (interaction.guildId) {
+      const guildSettings = await client.db.getGuildSettings(interaction.guildId);
+      if (Number(guildSettings.duels_enabled) === 0) {
+        await respondError(
+          interaction,
+          t(lang, 'duel_guild_disabled_title'),
+          t(lang, 'duel_guild_disabled'),
+        );
+        return;
+      }
+    }
 
     let opponent = interaction.options.getUser('użytkownik', false);
     if (!opponent) {
@@ -80,33 +100,43 @@ export default {
     if (!opponent) {
       await respondError(
         interaction,
-        '❌ Brak przeciwnika',
-        'Wskaż gracza: `/pojedynek użytkownik:@gracz zakład:...`',
+        t(lang, 'duel_no_opponent_title'),
+        t(lang, 'duel_no_opponent'),
       );
       return;
     }
 
     if (opponent.id === userId) {
-      await respondError(interaction, '❌ Nie możesz', 'Nie możesz wyzwać samego siebie.');
+      await respondError(interaction, t(lang, 'duel_cannot'), t(lang, 'duel_self'));
       return;
     }
 
     if (opponent.bot) {
-      await respondError(interaction, '❌ Nie możesz', 'Nie możesz wyzwać bota.');
+      await respondError(interaction, t(lang, 'duel_cannot'), t(lang, 'duel_bot'));
       return;
     }
 
-    const [challengerData, opponentData, opponentBlocked] = await Promise.all([
+    const [challengerData, opponentData, opponentBlocked, opponentAccepts] = await Promise.all([
       client.db.getUser(userId),
       client.db.getUser(opponent.id),
       client.db.isUserBlocked(opponent.id),
+      client.db.isDuelEnabled(opponent.id),
     ]);
 
     if (opponentBlocked) {
       await respondError(
         interaction,
-        '🚫 Konto zablokowane',
-        'Ten użytkownik nie może grać w kasynie.',
+        t(lang, 'blocked_title'),
+        t(lang, 'duel_blocked_opponent'),
+      );
+      return;
+    }
+
+    if (!opponentAccepts) {
+      await respondError(
+        interaction,
+        t(lang, 'duel_not_accepting_title'),
+        t(lang, 'duel_not_accepting')(`<@${opponent.id}>`),
       );
       return;
     }
@@ -114,8 +144,8 @@ export default {
     if (!GameHelper.canAfford(challengerData.money, bet)) {
       await respondError(
         interaction,
-        '❌ Niewystarczające Środki',
-        `Potrzebujesz **$${bet.toLocaleString()}** ale masz tylko **$${challengerData.money.toLocaleString()}**.`,
+        t(lang, 'insufficient_funds_title'),
+        t(lang, 'error_insufficient_funds')(bet, challengerData.money),
       );
       return;
     }
@@ -123,8 +153,8 @@ export default {
     if (!GameHelper.canAfford(opponentData.money, bet)) {
       await respondError(
         interaction,
-        '❌ Przeciwnik bez kasy',
-        `<@${opponent.id}> ma **$${opponentData.money.toLocaleString()}**, a stawka to **$${bet.toLocaleString()}**.`,
+        t(lang, 'duel_opponent_broke_title'),
+        t(lang, 'duel_opponent_broke')(`<@${opponent.id}>`, opponentData.money, bet),
       );
       return;
     }
@@ -132,13 +162,13 @@ export default {
     if (isUserInDuel(userId) || isUserInDuel(opponent.id)) {
       await respondWarning(
         interaction,
-        '⚠️ Wyzwanie w toku',
-        'Ty albo przeciwnik macie już aktywny pojedynek. Dokończcie go albo poczekajcie, aż wygaśnie.',
+        t(lang, 'duel_busy_title'),
+        t(lang, 'duel_busy'),
       );
       return;
     }
 
-    const challenge = createChallenge({
+    const challenge = await createChallenge({
       challengerId: userId,
       opponentId: opponent.id,
       bet,
@@ -147,17 +177,17 @@ export default {
     if (!challenge) {
       await respondWarning(
         interaction,
-        '⚠️ Wyzwanie w toku',
-        'Ty albo przeciwnik macie już aktywny pojedynek. Dokończcie go albo poczekajcie, aż wygaśnie.',
+        t(lang, 'duel_busy_title'),
+        t(lang, 'duel_busy'),
       );
       return;
     }
 
     const expiresAtSec = Math.floor((challenge.createdAt + CHALLENGE_TIMEOUT_MS) / 1000);
     const payload = {
-      content: `⚔️ <@${opponent.id}>, masz wyzwanie!`,
-      embeds: [pendingEmbed('Pojedynek', pendingDescription(challenge, expiresAtSec))],
-      components: [buildChallengeButtons(challenge)],
+      content: t(lang, 'duel_ping')(opponent.id),
+      embeds: [pendingEmbed(t(lang, 'duel_title'), pendingDescription(challenge, expiresAtSec, lang))],
+      components: [buildChallengeButtons(challenge, lang)],
       allowedMentions: { users: [opponent.id] },
     };
 
@@ -195,8 +225,8 @@ export default {
 
       try {
         await interaction.editReply({
-          content: '⏳ Wyzwanie wygasło.',
-          embeds: [infoGameEmbed('Pojedynek', 'Nikt nie przyjął wyzwania w 60 sekund. Nic nie zostało pobrane.')],
+          content: t(lang, 'duel_expired_content'),
+          embeds: [infoGameEmbed(t(lang, 'duel_title'), t(lang, 'duel_expired_desc'))],
           components: [],
         });
       } catch {

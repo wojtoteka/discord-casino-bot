@@ -1,15 +1,50 @@
 ﻿import { Interaction } from 'discord.js';
 import { AdminBot } from '../../admin-bot';
 import { EmbedHelper } from '../../utils/helpers';
+import { ADMIN_ID, handleAdminButton } from '../../utils/adminShared';
 
-const ADMIN_ID = process.env.ADMIN_USER_ID || '1328758394588500024';
+function isAdminButton(customId: string): boolean {
+  return customId.startsWith('admin_ok:')
+    || customId.startsWith('admin_no:')
+    || customId.startsWith('admin_blk:');
+}
 
 export default {
   name: 'interactionCreate',
   async execute(interaction: Interaction) {
+    if (interaction.isButton()) {
+      if (interaction.user.id !== ADMIN_ID) {
+        await interaction.reply({
+          embeds: [EmbedHelper.errorEmbed(
+            '🚫 Brak Dostępu',
+            'Ten bot jest dostępny tylko dla administratora systemu.\n\nUżyj RoyalCasino do gier!',
+          )],
+          flags: 64,
+        });
+        return;
+      }
+
+      if (!isAdminButton(interaction.customId)) return;
+
+      try {
+        await handleAdminButton(interaction);
+      } catch (error) {
+        console.error('[ADMIN BOT] Błąd przycisku admina:', error);
+        const reply = {
+          content: '❌ Wystąpił błąd podczas obsługi przycisku!',
+          flags: 64,
+        };
+        if (interaction.replied || interaction.deferred) {
+          await interaction.followUp(reply);
+        } else if (interaction.message) {
+          await interaction.reply(reply).catch(() => {});
+        }
+      }
+      return;
+    }
+
     if (!interaction.isChatInputCommand()) return;
 
-    // Check if user is admin
     if (interaction.user.id !== ADMIN_ID) {
       const embed = EmbedHelper.errorEmbed(
         '🚫 Brak Dostępu',

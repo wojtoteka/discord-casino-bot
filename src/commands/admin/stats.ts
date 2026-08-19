@@ -1,51 +1,55 @@
 ﻿import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction } from 'discord.js';
-import { CasinoBot } from '../../index';
-import { EmbedHelper } from '../../utils/helpers';
-
-const ADMIN_ID = '1328758394588500024';
+import { EmbedHelper, GameHelper } from '../../utils/helpers';
+import { slashLocales, slashNameLocales } from '../../i18n';
+import { denyIfNotAdmin, getAdminDb } from '../../utils/adminShared';
 
 export default {
   data: new SlashCommandBuilder()
     .setName('admin-statystyki')
-    .setDescription('[ADMIN] Wyświetl statystyki bota'),
+    .setNameLocalizations(slashNameLocales('admin-stats'))
+    .setDescription('[ADMIN] Wyświetl statystyki bota')
+    .setDescriptionLocalizations(slashLocales('[ADMIN] Show bot statistics')),
 
   async execute(interaction: ChatInputCommandInteraction) {
-    if (interaction.user.id !== ADMIN_ID) {
-      const embed = EmbedHelper.errorEmbed(
-        '🚫 Brak Dostępu',
-        'Nie masz uprawnień do używania tej komendy!\nTa komenda jest dostępna tylko dla administratora.'
-      );
-      await interaction.reply({ embeds: [embed], flags: 64 });
+    const denied = denyIfNotAdmin(interaction.user.id);
+    if (denied) {
+      await interaction.reply({ embeds: [denied], flags: 64 });
       return;
     }
 
-    const client = interaction.client as CasinoBot;
+    const db = getAdminDb(interaction);
 
     try {
-      const stats = await client.db.getUserStats();
-      const guilds = client.guilds.cache.size;
+      const stats = await db.getHealthStats();
+      const guilds = interaction.client.guilds.cache.size;
+      const avg = Math.floor(Number(stats.totalMoney) / (stats.users || 1));
 
-      let description = `**🎮 Serwery:** ${guilds}\n\n`;
-      description += `**👥 Użytkownicy w bazie:** ${stats.total}\n`;
-      description += `**🔒 Zablokowani:** ${stats.blocked}\n`;
-      description += `**✅ Aktywni:** ${stats.total - stats.blocked}\n\n`;
-      description += `**💰 Całkowita wartość pieniędzy:** $${stats.totalMoney.toLocaleString()}\n`;
-      description += `**💵 Średnio na użytkownika:** $${Math.floor(stats.totalMoney / (stats.total || 1)).toLocaleString()}`;
+      const description =
+        `**🎮 Serwery (admin bot):** ${guilds}\n\n` +
+        `**👥 Konta:** ${stats.users.toLocaleString('pl-PL')}\n` +
+        `**🆕 Nowe konta (24h):** ${stats.newUsers24h.toLocaleString('pl-PL')}\n` +
+        `**🔒 Zablokowani:** ${stats.blocked.toLocaleString('pl-PL')}\n` +
+        `**✅ Aktywni:** ${(stats.users - stats.blocked).toLocaleString('pl-PL')}\n\n` +
+        `**💰 Pieniądze w obiegu:** ${GameHelper.formatMoney(Number(stats.totalMoney) || 0)}\n` +
+        `**🎟️ Kredyty w obiegu:** ${GameHelper.formatCredits(Number(stats.totalCredits) || 0)}\n` +
+        `**💵 Średnio na konto:** $${avg.toLocaleString('pl-PL')}\n\n` +
+        `**🎮 Gry 24h:** ${stats.games24h.toLocaleString('pl-PL')}\n` +
+        `**💸 Obstawione 24h:** $${Number(stats.wagered24h).toLocaleString('pl-PL')}\n` +
+        `**🏦 Netto kasyna 24h:** $${Number(stats.houseNet24h).toLocaleString('pl-PL')}\n` +
+        `**🎮 Gry łącznie:** ${Number(stats.totalGames).toLocaleString('pl-PL')}\n\n` +
+        `**🗳️ Głosy 24h:** ${stats.votesLast24h.toLocaleString('pl-PL')}  ·  łącznie ${stats.votesTotal.toLocaleString('pl-PL')}`;
 
-      const embed = EmbedHelper.infoEmbed(
-        '📊 Statystyki Bota',
-        description
-      );
-
-      await interaction.reply({ embeds: [embed], flags: 64 });
+      await interaction.reply({
+        embeds: [EmbedHelper.infoEmbed('📊 Statystyki Bota', description)],
+        flags: 64,
+      });
     } catch (error) {
       console.error('Błąd pobierania statystyk:', error);
-      const embed = EmbedHelper.errorEmbed(
-        '❌ Błąd',
-        'Wystąpił błąd podczas pobierania statystyk.'
-      );
-      await interaction.reply({ embeds: [embed], flags: 64 });
+      await interaction.reply({
+        embeds: [EmbedHelper.errorEmbed('❌ Błąd', 'Wystąpił błąd podczas pobierania statystyk.')],
+        flags: 64,
+      });
     }
   },
 };

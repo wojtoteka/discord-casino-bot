@@ -2,13 +2,14 @@ import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { CasinoBot } from '../index';
 import { EmbedHelper } from '../utils/helpers';
-import { getUserLang, t } from '../i18n';
+import { getUserLang, slashLocales, t } from '../i18n';
 import { TOP_GG, ECONOMY } from '../config/constants';
 
 export default {
   data: new SlashCommandBuilder()
     .setName('vote')
-    .setDescription('🗳️ Głosuj na bota i zdobywaj nagrody!'),
+    .setDescription('🗳️ Głosuj na bota i zdobywaj nagrody!')
+    .setDescriptionLocalizations(slashLocales('Vote for the bot and earn a bonus')),
 
   async execute(interaction: ChatInputCommandInteraction) {
     const client = interaction.client as CasinoBot;
@@ -32,30 +33,30 @@ export default {
     embed.addFields(
       { name: t(lang, 'vote_reward_label'), value: t(lang, 'vote_reward_value'), inline: true },
       { name: t(lang, 'vote_last_vote'), value: lastVoteStr, inline: true },
-      { name: '📊 Statystyki', value: t(lang, 'vote_total')(voteCount), inline: true },
+      { name: t(lang, 'vote_stats'), value: t(lang, 'vote_total')(voteCount), inline: true },
     );
 
     if (!canVoteNow && lastVote) {
       embed.addFields({
-        name: '⏳ Następne głosowanie',
+        name: t(lang, 'vote_next'),
         value: `<t:${Math.floor(canVoteAt / 1000)}:R>`,
         inline: false,
       });
     }
 
-    embed.setFooter({ text: '🎰 RoyalCasino • Głosowanie pomaga w rozwoju bota!' });
+    embed.setFooter({ text: t(lang, 'vote_footer') });
 
     const botId = TOP_GG.botId || interaction.client.user?.id || 'YOUR_BOT_ID';
     const validBotId = !!(botId && botId !== 'YOUR_BOT_ID');
 
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
-        .setLabel('🗳️ Głosuj na top.gg')
+        .setLabel(t(lang, 'vote_btn'))
         .setURL(TOP_GG.voteUrl(botId))
         .setStyle(ButtonStyle.Link)
         .setDisabled(!validBotId),
       new ButtonBuilder()
-        .setLabel('⭐ Oceń bota')
+        .setLabel(t(lang, 'vote_rate'))
         .setURL(TOP_GG.listUrl(botId))
         .setStyle(ButtonStyle.Link)
         .setDisabled(!validBotId),

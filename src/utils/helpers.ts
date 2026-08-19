@@ -65,6 +65,26 @@ export class GameHelper {
   }
 }
 
+/** XP needed to go from `level` to the next one. */
+export function getRequiredXP(level: number): number {
+  const lvl = Math.max(1, Math.trunc(level) || 1);
+  return Math.floor(100 * Math.pow(lvl, 1.5));
+}
+
+/** Calendar date `YYYY-MM-DD` in Europe/Warsaw. */
+export function getWarsawDateKey(timestamp: number = Date.now()): string {
+  const parts = new Intl.DateTimeFormat('pl-PL', {
+    timeZone: 'Europe/Warsaw',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date(timestamp));
+  const year = parts.find(p => p.type === 'year')?.value || '1970';
+  const month = parts.find(p => p.type === 'month')?.value || '01';
+  const day = parts.find(p => p.type === 'day')?.value || '01';
+  return `${year}-${month}-${day}`;
+}
+
 export class BonusHelper {
   public static canClaimBonus(lastBonus: number, cooldownHours: number): boolean {
     const now = Date.now();
