@@ -18,17 +18,17 @@ console.warn = (...args: unknown[]) => {
 };
 
 async function deployCommands() {
-  console.log('📋 Rejestrowanie komend slash...\n');
-  
+  console.log('📋 Rejestrowanie komend slash (kasyno + admin)...\n');
+
   try {
     const deployScript = path.join(__dirname, '../scripts/deploy-commands.js');
-    execSync(`node "${deployScript}"`, { 
+    execSync(`node "${deployScript}"`, {
       stdio: 'inherit',
-      cwd: path.join(__dirname, '..')
+      cwd: path.join(__dirname, '..'),
     });
     console.log('\n✅ Komendy zarejestrowane pomyślnie!\n');
   } catch (error) {
-    console.error('⚠️ Błąd podczas rejestracji komend (kontynuowanie...):', error);
+    console.error('⚠️ Błąd podczas rejestracji komend (kontynuowanie; boty zarejestrują je po loginie):', error);
   }
 }
 

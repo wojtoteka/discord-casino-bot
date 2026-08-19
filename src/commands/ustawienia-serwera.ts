@@ -2,29 +2,51 @@ import { SlashCommandBuilder } from '@discordjs/builders';
 import {
   ChannelType,
   ChatInputCommandInteraction,
+  EmbedBuilder,
   PermissionFlagsBits,
 } from 'discord.js';
 import { CasinoBot } from '../index';
 import { EmbedHelper } from '../utils/helpers';
-import { pendingEmbed, pendingList } from '../utils/embeds';
+import { brandTitle } from '../utils/embeds';
+import { BRAND, COLORS } from '../config/constants';
 import { getUserLang, slashLocales, slashNameLocales, t, type Lang } from '../i18n';
 import type { GuildSettings } from '../database/Database';
 
-function settingsBody(lang: Lang, settings: GuildSettings): string {
+function buildSettingsEmbed(lang: Lang, settings: GuildSettings, changed: boolean): EmbedBuilder {
   const channelValue = settings.casino_channel_id
     ? `<#${settings.casino_channel_id}>`
     : t(lang, 'guild_settings_no_channel');
   const duelsValue = Number(settings.duels_enabled) === 0
     ? t(lang, 'guild_settings_duels_off')
     : t(lang, 'guild_settings_duels_on');
-  return pendingList(
-    t(lang, 'guild_settings_desc'),
-    [
-      [t(lang, 'guild_settings_channel_label'), channelValue],
-      [t(lang, 'guild_settings_duels_label'), duelsValue],
-    ],
-    t(lang, 'guild_settings_hint'),
-  );
+
+  const description = changed
+    ? `${t(lang, 'guild_settings_updated')}\n\n${t(lang, 'guild_settings_desc')}`
+    : t(lang, 'guild_settings_desc');
+
+  return new EmbedBuilder()
+    .setTitle(brandTitle(t(lang, 'guild_settings_title')))
+    .setColor(changed ? COLORS.success : COLORS.info)
+    .setDescription(description)
+    .addFields(
+      {
+        name: t(lang, 'guild_settings_channel_label'),
+        value: channelValue,
+        inline: true,
+      },
+      {
+        name: t(lang, 'guild_settings_duels_label'),
+        value: duelsValue,
+        inline: true,
+      },
+      {
+        name: t(lang, 'guild_settings_howto'),
+        value: t(lang, 'guild_settings_howto_body'),
+        inline: false,
+      },
+    )
+    .setFooter({ text: BRAND.footerText })
+    .setTimestamp();
 }
 
 export default {
@@ -111,12 +133,9 @@ export default {
     }
 
     const changed = clearChannel || !!channel || duels !== null;
-    const body = settingsBody(lang, settings);
-    const embed = pendingEmbed(
-      t(lang, 'guild_settings_title'),
-      changed ? `${body}\n\n${t(lang, 'guild_settings_updated')}` : body,
-    );
-
-    await interaction.reply({ embeds: [embed], flags: 64 });
+    await interaction.reply({
+      embeds: [buildSettingsEmbed(lang, settings, changed)],
+      flags: 64,
+    });
   },
 };

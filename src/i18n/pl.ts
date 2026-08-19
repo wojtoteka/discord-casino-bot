@@ -513,16 +513,19 @@ export const pl = {
   casino_channel_only: (channel: string) =>
     `Gry i ekonomia działają tylko na kanale ${channel}.`,
 
-  guild_settings_title: 'Ustawienia serwera',
-  guild_settings_desc: 'Kanał kasyna i pojedynki na tym serwerze.',
+  guild_settings_title: 'Kasyno na tym serwerze',
+  guild_settings_desc: 'Aktualne ustawienia kasyna na tym serwerze.',
   guild_settings_channel_label: 'Kanał kasyna',
-  guild_settings_no_channel: 'Brak — komendy działają wszędzie',
+  guild_settings_no_channel: 'Wszędzie',
   guild_settings_duels_label: 'Pojedynki',
   guild_settings_duels_on: 'Włączone',
   guild_settings_duels_off: 'Wyłączone',
   guild_settings_hint:
     'Ustaw kanał, aby gry i ekonomia działały tylko tam. `/ustawienia-serwera` działa z każdego kanału.',
-  guild_settings_updated: 'Zapisano ustawienia serwera.',
+  guild_settings_howto: 'Jak zmienić',
+  guild_settings_howto_body:
+    '`kanal:` — tylko ten kanał\n`wyczysc: True` — znowu wszędzie\n`pojedynki:` — włącz / wyłącz `/pojedynek`',
+  guild_settings_updated: 'Zapisano zmiany. Poniżej aktualne ustawienia.',
   guild_settings_need_guild: 'Ta komenda działa tylko na serwerze.',
 
   duel_guild_disabled_title: 'Pojedynki wyłączone',

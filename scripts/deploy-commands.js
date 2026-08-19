@@ -1,84 +1,56 @@
-const { REST, Routes } = require('discord.js');
-const { config } = require('dotenv');
-const fs = require('fs');
 const path = require('path');
+const { config } = require('dotenv');
+const { loadSlashCommands, deploySlash } = require('./slash-deploy-lib');
 
-// Load .env from project root
 config({ path: path.join(__dirname, '../.env') });
 
 console.log('🚀 Rejestrowanie komend dla RoyalCasino i Admin Bota...\n');
 
-// ============ ROYALCASINO COMMANDS ============
-const casinoCommands = [];
-const commandsPath = path.join(__dirname, '../dist/commands');
-
-// Load all regular casino command files (no admin folder)
-const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
-
-for (const file of commandFiles) {
-  const filePath = path.join(commandsPath, file);
-  const command = require(filePath);
-  if ('data' in command.default && 'execute' in command.default) {
-    casinoCommands.push(command.default.data.toJSON());
-  }
-}
-
-// ============ ADMIN BOT COMMANDS ============
-const adminCommands = [];
-const adminCommandsPath = path.join(__dirname, '../dist/commands/admin');
-
-try {
-  const adminCommandFiles = fs.readdirSync(adminCommandsPath).filter(file => file.endsWith('.js'));
-
-  for (const file of adminCommandFiles) {
-    const filePath = path.join(adminCommandsPath, file);
-    const command = require(filePath);
-    if ('data' in command.default && 'execute' in command.default) {
-      adminCommands.push(command.default.data.toJSON());
-    }
-  }
-} catch (error) {
-  console.error('⚠️  Błąd ładowania komend admin');
-}
-
-// ============ DEPLOY ROYALCASINO ============
-const casinoRest = new REST().setToken(process.env.DISCORD_TOKEN);
+const casinoPath = path.join(__dirname, '../dist/commands');
+const adminPath = path.join(__dirname, '../dist/commands/admin');
 
 (async () => {
+  let failed = false;
+
   try {
-    console.log(`🎰 Rozpoczęto rejestrację ${casinoCommands.length} komend RoyalCasino...`);
-
-    const casinoData = await casinoRest.put(
-      Routes.applicationCommands(process.env.CLIENT_ID),
-      { body: casinoCommands }
-    );
-
-    console.log(`✅ Pomyślnie zarejestrowano ${casinoData.length} komend RoyalCasino.\n`);
-
-    // ============ DEPLOY ADMIN BOT ============
-    if (process.env.ADMIN_BOT_TOKEN && process.env.ADMIN_CLIENT_ID) {
-      const adminRest = new REST().setToken(process.env.ADMIN_BOT_TOKEN);
-      
-      console.log(`🔐 Rozpoczęto rejestrację ${adminCommands.length} komend Admin Bota...`);
-
-      const adminData = await adminRest.put(
-        Routes.applicationCommands(process.env.ADMIN_CLIENT_ID),
-        { body: adminCommands }
-      );
-
-      console.log(`✅ Pomyślnie zarejestrowano ${adminData.length} komend Admin Bota.\n`);
-      console.log('━'.repeat(50));
-      console.log('✅ Wszystkie komendy zostały pomyślnie zarejestrowane!');
-      console.log(`🎰 RoyalCasino: ${casinoData.length} komend`);
-      console.log(`🔐 Admin Bot: ${adminData.length} komend`);
-      console.log('━'.repeat(50));
-    } else {
-      console.log('⚠️  Pomiń Admin Bota - brak ADMIN_BOT_TOKEN lub ADMIN_CLIENT_ID w .env');
-      console.log('━'.repeat(50));
-      console.log(`✅ RoyalCasino: ${casinoData.length} komend zarejestrowanych`);
-      console.log('━'.repeat(50));
-    }
+    const { commands, fileCount } = loadSlashCommands(casinoPath, 'DEPLOY CASINO');
+    console.log(`🎰 RoyalCasino: ${commands.length}/${fileCount} komend z dist/commands`);
+    await deploySlash({
+      label: 'DEPLOY CASINO',
+      token: process.env.DISCORD_TOKEN,
+      tokenSource: 'DISCORD_TOKEN',
+      appIdEnvKeys: ['CLIENT_ID', 'CASINO_CLIENT_ID'],
+      guildEnvKeys: ['GUILD_ID', 'TEST_GUILD_ID', 'CASINO_GUILD_ID'],
+      commands,
+      forceGlobal: process.env.CASINO_DEPLOY_GLOBAL === '1',
+    });
   } catch (error) {
-    console.error('❌ Błąd podczas rejestracji komend:', error);
+    failed = true;
+    console.error('❌ RoyalCasino:', error.message || error);
   }
+
+  try {
+    const { commands, fileCount } = loadSlashCommands(adminPath, 'DEPLOY ADMIN');
+    console.log(`🔐 Admin Bot: ${commands.length}/${fileCount} komend z dist/commands/admin`);
+    await deploySlash({
+      label: 'DEPLOY ADMIN',
+      token: process.env.ADMIN_BOT_TOKEN,
+      tokenSource: 'ADMIN_BOT_TOKEN',
+      appIdEnvKeys: ['ADMIN_CLIENT_ID', 'ADMIN_APPLICATION_ID', 'APPLICATION_ID'],
+      guildEnvKeys: ['ADMIN_GUILD_ID', 'GUILD_ID', 'TEST_GUILD_ID'],
+      commands,
+      forceGlobal: process.env.ADMIN_DEPLOY_GLOBAL === '1',
+    });
+  } catch (error) {
+    failed = true;
+    console.error('❌ Admin Bot:', error.message || error);
+  }
+
+  if (failed) {
+    process.exit(1);
+  }
+
+  console.log('━'.repeat(50));
+  console.log('✅ Rejestracja komend zakończona');
+  console.log('━'.repeat(50));
 })();

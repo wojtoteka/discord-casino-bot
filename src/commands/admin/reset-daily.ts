@@ -15,6 +15,15 @@ export default {
     .setNameLocalizations(slashNameLocales('admin-reset-daily'))
     .setDescription('[ADMIN] Resetuj cooldown daily / bonusu (streak zostaje)')
     .setDescriptionLocalizations(slashLocales('[ADMIN] Reset daily / bonus cooldown (keeps streak by default)'))
+    .addStringOption(option =>
+      option
+        .setName('powód')
+        .setNameLocalizations(slashNameLocales('reason'))
+        .setDescription('Powód resetu')
+        .setDescriptionLocalizations(slashLocales('Reason for the reset'))
+        .setRequired(true)
+        .setMaxLength(200)
+    )
     .addUserOption(option =>
       option
         .setName('użytkownik')
@@ -30,15 +39,6 @@ export default {
         .setDescription('Discord ID (gdy brak wzmianki)')
         .setDescriptionLocalizations(slashLocales('Raw Discord user ID'))
         .setRequired(false)
-    )
-    .addStringOption(option =>
-      option
-        .setName('powód')
-        .setNameLocalizations(slashNameLocales('reason'))
-        .setDescription('Powód resetu')
-        .setDescriptionLocalizations(slashLocales('Reason for the reset'))
-        .setRequired(true)
-        .setMaxLength(200)
     )
     .addBooleanOption(option =>
       option

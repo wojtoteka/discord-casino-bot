@@ -498,15 +498,18 @@ export const en: Locale = {
     `Games and economy commands only work in ${channel}.`,
 
   guild_settings_title: 'Server settings',
-  guild_settings_desc: 'Casino channel and duels on this server.',
+  guild_settings_desc: 'Current casino settings on this server.',
   guild_settings_channel_label: 'Casino channel',
-  guild_settings_no_channel: 'None — commands work everywhere',
+  guild_settings_no_channel: 'Everywhere',
   guild_settings_duels_label: 'Duels',
-  guild_settings_duels_on: 'Enabled',
-  guild_settings_duels_off: 'Disabled',
+  guild_settings_duels_on: 'On',
+  guild_settings_duels_off: 'Off',
   guild_settings_hint:
     'Set a channel so games and economy only work there. `/ustawienia-serwera` always works from any channel.',
-  guild_settings_updated: 'Server settings saved.',
+  guild_settings_howto: 'How to change',
+  guild_settings_howto_body:
+    '`channel:` — games only in that channel\n`clear: True` — everywhere again\n`duels:` — enable / disable `/pojedynek`',
+  guild_settings_updated: 'Saved. Current settings are below.',
   guild_settings_need_guild: 'This command only works in a server.',
 
   duel_guild_disabled_title: 'Duels disabled',

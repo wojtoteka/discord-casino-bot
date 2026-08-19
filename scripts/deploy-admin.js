@@ -1,47 +1,31 @@
-const { REST, Routes } = require('discord.js');
-const { config } = require('dotenv');
-const fs = require('fs');
 const path = require('path');
+const { config } = require('dotenv');
+const { loadSlashCommands, deploySlash } = require('./slash-deploy-lib');
 
-// Load .env from project root
 config({ path: path.join(__dirname, '../.env') });
 
-const commands = [];
+const LABEL = 'DEPLOY ADMIN';
 const adminCommandsPath = path.join(__dirname, '../dist/commands/admin');
-
-// Load admin command files
-try {
-  const adminCommandFiles = fs.readdirSync(adminCommandsPath).filter(file => file.endsWith('.js'));
-
-  for (const file of adminCommandFiles) {
-    const filePath = path.join(adminCommandsPath, file);
-    const imported = require(filePath);
-    const command = imported?.default?.default || imported?.default || imported;
-
-    if (command?.data && typeof command.execute === 'function') {
-      commands.push(command.data.toJSON());
-    } else {
-      console.log(`⚠️  [DEPLOY ADMIN] Pominięto komendę bez poprawnego exportu: ${file}`);
-    }
-  }
-} catch (error) {
-  console.error('❌ Błąd ładowania komend admin:', error);
-  process.exit(1);
-}
-
-const rest = new REST().setToken(process.env.ADMIN_BOT_TOKEN);
 
 (async () => {
   try {
-    console.log(`🔐 Rozpoczęto rejestrację ${commands.length} komend Admin Bota.`);
+    const { commands, names, fileCount } = loadSlashCommands(adminCommandsPath, LABEL);
+    console.log(`🔐 ${LABEL}: wczytano ${commands.length}/${fileCount} plików z dist/commands/admin`);
+    if (names.length) {
+      console.log(`🔐 ${LABEL}: ${names.join(', ')}`);
+    }
 
-    const data = await rest.put(
-      Routes.applicationCommands(process.env.ADMIN_CLIENT_ID),
-      { body: commands }
-    );
-
-    console.log(`✅ Pomyślnie zarejestrowano ${data.length} komend Admin Bota.`);
+    await deploySlash({
+      label: LABEL,
+      token: process.env.ADMIN_BOT_TOKEN,
+      tokenSource: 'ADMIN_BOT_TOKEN',
+      appIdEnvKeys: ['ADMIN_CLIENT_ID', 'ADMIN_APPLICATION_ID', 'APPLICATION_ID'],
+      guildEnvKeys: ['ADMIN_GUILD_ID', 'GUILD_ID', 'TEST_GUILD_ID'],
+      commands,
+      forceGlobal: process.env.ADMIN_DEPLOY_GLOBAL === '1',
+    });
   } catch (error) {
-    console.error(error);
+    console.error(`❌ ${LABEL}:`, error.message || error);
+    process.exit(1);
   }
 })();

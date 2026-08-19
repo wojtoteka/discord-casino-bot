@@ -2,6 +2,7 @@ import { ActivityType } from 'discord.js';
 import { CasinoBot } from '../index';
 import { startVoteWebhook } from '../utils/voteWebhook';
 import { startVotePoller } from '../utils/votePoller';
+import { registerSlashCommands } from '../utils/slashDeploy';
 
 const STATUSES = [
   { name: '🎰 RoyalCasino | /pomoc', type: ActivityType.Playing },
@@ -59,6 +60,11 @@ export default {
     console.log(`🎰 [ROYALCASINO] RoyalCasino jest gotowy!`);
     console.log(`📊 [ROYALCASINO] Załadowano ${client.commands.size} komend`);
     console.log(`🌐 [ROYALCASINO] Aktywny na ${client.guilds.cache.size} serwerach`);
+
+    void registerSlashCommands(client, client.commands, {
+      label: 'ROYALCASINO',
+      kind: 'casino',
+    });
 
     // Set initial status
     let statusIndex = 0;

@@ -1,12 +1,13 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
-import { ChatInputCommandInteraction } from 'discord.js';
+import { ChatInputCommandInteraction, EmbedBuilder } from 'discord.js';
 import { CasinoBot } from '../index';
+import { BRAND, COLORS } from '../config/constants';
 import { EmbedHelper } from '../utils/helpers';
 import { asQuote } from '../utils/embeds';
+import { ADMIN_ID } from '../utils/adminShared';
 import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
 import type { ReportType } from '../database/Database';
 
-const ADMIN_ID = '1328758394588500024';
 const REPORT_COOLDOWN_MS = 10 * 60 * 1000;
 const MIN_DESC = 10;
 const MAX_DESC = 1000;
@@ -17,6 +18,63 @@ function reportTypeLabel(type: ReportType): string {
   if (type === 'bug') return 'Bug';
   if (type === 'naduzycie') return 'Nadużycie';
   return 'Inne';
+}
+
+function guildLabel(guildId: string | null | undefined, guildName?: string | null): string {
+  if (!guildId) return 'DM';
+  if (guildName) return `${guildName} (\`${guildId}\`)`;
+  return `\`${guildId}\``;
+}
+
+function channelLabel(
+  channelId: string | null | undefined,
+  channelName?: string | null,
+): string {
+  if (!channelId) return '—';
+  if (channelName) return `${channelName} (\`${channelId}\`)`;
+  return `<#${channelId}> (\`${channelId}\`)`;
+}
+
+function buildReportAlertEmbed(input: {
+  reportId: number;
+  type: ReportType;
+  reporterId: string;
+  reporterTag?: string | null;
+  reportedId?: string | null;
+  reportedTag?: string | null;
+  guildId?: string | null;
+  guildName?: string | null;
+  channelId?: string | null;
+  channelName?: string | null;
+  description: string;
+}): EmbedBuilder {
+  const reportedValue = input.reportedId
+    ? (input.reportedTag
+      ? `${input.reportedTag} (\`${input.reportedId}\`)`
+      : `\`${input.reportedId}\``)
+    : '—';
+  const reporterValue = input.reporterTag
+    ? `${input.reporterTag} (\`${input.reporterId}\`)`
+    : `\`${input.reporterId}\``;
+
+  return new EmbedBuilder()
+    .setColor(COLORS.warning)
+    .setTitle(`Nowe zgłoszenie #${input.reportId}`)
+    .setDescription(asQuote(input.description).slice(0, 3900))
+    .addFields(
+      { name: 'Typ', value: reportTypeLabel(input.type), inline: true },
+      { name: 'Zgłaszający', value: reporterValue.slice(0, 1024), inline: true },
+      { name: 'Użytkownik', value: reportedValue.slice(0, 1024), inline: true },
+      { name: 'Serwer', value: guildLabel(input.guildId, input.guildName), inline: true },
+      { name: 'Kanał', value: channelLabel(input.channelId, input.channelName), inline: true },
+      {
+        name: 'Zamknij',
+        value: `\`/admin-zgloszenia\` → zamknij: **${input.reportId}**`,
+        inline: false,
+      },
+    )
+    .setFooter({ text: `${BRAND.footerText} · Panel administracyjny` })
+    .setTimestamp();
 }
 
 export default {
@@ -152,32 +210,27 @@ export default {
       if (lastReportAt.get(userId) === now) lastReportAt.delete(userId);
     }, REPORT_COOLDOWN_MS);
 
+    const channelName = interaction.channel && 'name' in interaction.channel
+      ? String(interaction.channel.name ?? '')
+      : null;
+
     try {
-      const admin = await client.users.fetch(ADMIN_ID);
-      const guildLine = interaction.guild
-        ? `${interaction.guild.name} (\`${interaction.guild.id}\`)`
-        : 'DM';
-      const channelLine = interaction.guildId && interaction.channelId
-        ? `<#${interaction.channelId}> (\`${interaction.channelId}\`)`
-        : `\`${interaction.channelId}\``;
-      const reportedLine = reported
-        ? `${reported.username} (\`${reported.id}\`)`
-        : '—';
-      const embed = EmbedHelper.warningEmbed(
-        `Nowe zgłoszenie #${reportId}`,
-        [
-          `**Typ:** ${reportTypeLabel(type)}`,
-          `**Zgłaszający:** ${interaction.user.username} (\`${userId}\`)`,
-          `**Użytkownik:** ${reportedLine}`,
-          `**Serwer:** ${guildLine}`,
-          `**Kanał:** ${channelLine}`,
-          '',
-          asQuote(description),
-          '',
-          `Zamknij: \`/admin-zgloszenia zamknij:${reportId}\``,
-        ].join('\n'),
-      );
-      await admin.send({ embeds: [embed] });
+      const owner = await interaction.client.users.fetch(ADMIN_ID);
+      await owner.send({
+        embeds: [buildReportAlertEmbed({
+          reportId,
+          type,
+          reporterId: userId,
+          reporterTag: interaction.user.username,
+          reportedId: reported?.id ?? null,
+          reportedTag: reported?.username ?? null,
+          guildId: interaction.guildId,
+          guildName: interaction.guild?.name ?? null,
+          channelId: interaction.channelId,
+          channelName,
+          description,
+        })],
+      });
     } catch (error) {
       console.warn('[ROYALCASINO] Nie udało się wysłać DM ze zgłoszeniem:', error);
     }
