@@ -8,8 +8,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-statystyki')
     .setNameLocalizations(slashNameLocales('admin-stats'))
-    .setDescription('[ADMIN] Panel: statystyki, gry, sesje, nowi, obserwowani')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Panel: stats, games, sessions, new users, watched')),
+    .setDescription('📊 [ADMIN] Panel: statystyki, gry, sesje, nowi, obserwowani')
+    .setDescriptionLocalizations(slashLocales('📊 [ADMIN] Panel: stats, games, sessions, new users, watched')),
 
   async execute(interaction: ChatInputCommandInteraction) {
     const denied = denyIfNotAdmin(interaction.user.id);

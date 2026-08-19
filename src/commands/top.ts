@@ -139,7 +139,7 @@ export default {
   data: new SlashCommandBuilder()
     .setName('top')
     .setDescription('📊 Zobacz ranking graczy')
-    .setDescriptionLocalizations(slashLocales('View player leaderboards'))
+    .setDescriptionLocalizations(slashLocales('📊 View player leaderboards'))
     .addStringOption(option =>
       option
         .setName('kategoria')

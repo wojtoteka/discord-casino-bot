@@ -15,8 +15,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-limit')
     .setNameLocalizations(slashNameLocales('admin-limit'))
-    .setDescription('[ADMIN] Tymczasowy max zakład dla gracza')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Set a temporary max bet for a user'))
+    .setDescription('🚦 [ADMIN] Tymczasowy max zakład dla gracza')
+    .setDescriptionLocalizations(slashLocales('🚦 [ADMIN] Set a temporary max bet for a user'))
     .addIntegerOption(option =>
       option
         .setName('kwota')

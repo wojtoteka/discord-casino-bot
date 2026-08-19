@@ -13,8 +13,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-reset-daily')
     .setNameLocalizations(slashNameLocales('admin-reset-daily'))
-    .setDescription('[ADMIN] Resetuj cooldown daily / bonusu (streak zostaje)')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Reset daily / bonus cooldown (keeps streak by default)'))
+    .setDescription('⏰ [ADMIN] Resetuj cooldown daily / bonusu (streak zostaje)')
+    .setDescriptionLocalizations(slashLocales('⏰ [ADMIN] Reset daily / bonus cooldown (keeps streak by default)'))
     .addStringOption(option =>
       option
         .setName('powód')

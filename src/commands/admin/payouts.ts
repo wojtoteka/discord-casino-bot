@@ -9,8 +9,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-wyplaty')
     .setNameLocalizations(slashNameLocales('admin-payouts'))
-    .setDescription('[ADMIN] Panel księgi wypłat')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Payout ledger panel'))
+    .setDescription('📚 [ADMIN] Panel księgi wypłat')
+    .setDescriptionLocalizations(slashLocales('📚 [ADMIN] Payout ledger panel'))
     .addStringOption(option =>
       option
         .setName('status')

@@ -8,8 +8,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-obserwowani')
     .setNameLocalizations(slashNameLocales('admin-watched'))
-    .setDescription('[ADMIN] Lista obserwowanych graczy')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] List watched users')),
+    .setDescription('📒 [ADMIN] Lista obserwowanych graczy')
+    .setDescriptionLocalizations(slashLocales('📒 [ADMIN] List watched users')),
 
   async execute(interaction: ChatInputCommandInteraction) {
     const denied = denyIfNotAdmin(interaction.user.id);

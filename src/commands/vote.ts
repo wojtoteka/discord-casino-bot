@@ -8,8 +8,8 @@ import { TOP_GG, ECONOMY } from '../config/constants';
 export default {
   data: new SlashCommandBuilder()
     .setName('vote')
-    .setDescription('🗳️ Głosuj na bota i zdobywaj nagrody!')
-    .setDescriptionLocalizations(slashLocales('Vote for the bot and earn a bonus')),
+    .setDescription('📮 Głosuj na bota i zdobywaj nagrody!')
+    .setDescriptionLocalizations(slashLocales('📮 Vote for the bot and earn a bonus')),
 
   async execute(interaction: ChatInputCommandInteraction) {
     const client = interaction.client as CasinoBot;

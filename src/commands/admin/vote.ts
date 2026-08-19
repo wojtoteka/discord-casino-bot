@@ -14,8 +14,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-vote')
     .setNameLocalizations(slashNameLocales('admin-vote'))
-    .setDescription('[ADMIN] Ostatnie głosy i lookup gracza')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Recent votes and optional user lookup'))
+    .setDescription('👍 [ADMIN] Ostatnie głosy i lookup gracza')
+    .setDescriptionLocalizations(slashLocales('👍 [ADMIN] Recent votes and optional user lookup'))
     .addUserOption(option =>
       option
         .setName('użytkownik')

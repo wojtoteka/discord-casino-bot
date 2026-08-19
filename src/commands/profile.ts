@@ -20,7 +20,7 @@ export default {
     .setName('profil')
     .setNameLocalizations(slashNameLocales('profile'))
     .setDescription('👤 Zobacz swój profil gracza z pełnymi statystykami')
-    .setDescriptionLocalizations(slashLocales('View a player profile and stats'))
+    .setDescriptionLocalizations(slashLocales('👤 View a player profile and stats'))
     .addUserOption(option =>
       option
         .setName('użytkownik')

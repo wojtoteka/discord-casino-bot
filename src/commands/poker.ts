@@ -34,8 +34,8 @@ const activeGames = new Map<string, PokerGame>();
 export default {
   data: new SlashCommandBuilder()
     .setName('poker')
-    .setDescription('🃏 Zagraj w Texas Hold\'em Poker przeciwko krupierowi')
-    .setDescriptionLocalizations(slashLocales("Texas Hold'em vs the dealer"))
+    .setDescription('🎩 Zagraj w Texas Hold\'em Poker przeciwko krupierowi')
+    .setDescriptionLocalizations(slashLocales("🎩 Texas Hold'em vs the dealer"))
     .addIntegerOption(option =>
       option
         .setName('zakład')

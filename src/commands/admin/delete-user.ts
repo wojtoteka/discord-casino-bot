@@ -15,8 +15,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-usun-uzytkownika')
     .setNameLocalizations(slashNameLocales('admin-delete-user'))
-    .setDescription('[ADMIN] Usuń użytkownika z bazy danych')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Delete a user from the database'))
+    .setDescription('❌ [ADMIN] Usuń użytkownika z bazy danych')
+    .setDescriptionLocalizations(slashLocales('❌ [ADMIN] Delete a user from the database'))
     .addUserOption(option =>
       option
         .setName('użytkownik')

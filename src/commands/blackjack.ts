@@ -40,7 +40,7 @@ export default {
   data: new SlashCommandBuilder()
     .setName('blackjack')
     .setDescription('🃏 Zagraj w blackjacka - cel: 21 punktów!')
-    .setDescriptionLocalizations(slashLocales('Play blackjack — hit 21'))
+    .setDescriptionLocalizations(slashLocales('🃏 Play blackjack — hit 21'))
     .addIntegerOption(option =>
       option
         .setName('zakład')

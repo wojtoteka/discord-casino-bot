@@ -8,8 +8,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-maintenance')
     .setNameLocalizations(slashNameLocales('admin-maintenance'))
-    .setDescription('[ADMIN] Włącz/wyłącz tryb aktualizacji kasyna')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Toggle casino maintenance mode'))
+    .setDescription('🚧 [ADMIN] Włącz/wyłącz tryb aktualizacji kasyna')
+    .setDescriptionLocalizations(slashLocales('🚧 [ADMIN] Toggle casino maintenance mode'))
     .addBooleanOption(option =>
       option
         .setName('włączony')

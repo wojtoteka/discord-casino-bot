@@ -49,7 +49,7 @@ export default {
   data: new SlashCommandBuilder()
     .setName('keno')
     .setDescription('🎱 Keno - wybierz liczby, bot losuje 20. Im więcej trafień, tym większa wygrana!')
-    .setDescriptionLocalizations(slashLocales('Keno — pick numbers, 20 are drawn. More hits, bigger payout'))
+    .setDescriptionLocalizations(slashLocales('🎱 Keno — pick numbers, 20 are drawn. More hits, bigger payout'))
     .addIntegerOption(option =>
       option
         .setName('zakład')

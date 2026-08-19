@@ -20,8 +20,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-multi')
     .setNameLocalizations(slashNameLocales('admin-multi'))
-    .setDescription('[ADMIN] Globalny event: bonus daily % albo mnożnik XP')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Global event: daily bonus % or XP multiplier'))
+    .setDescription('🎉 [ADMIN] Globalny event: bonus daily % albo mnożnik XP')
+    .setDescriptionLocalizations(slashLocales('🎉 [ADMIN] Global event: daily bonus % or XP multiplier'))
     .addStringOption(option =>
       option
         .setName('typ')

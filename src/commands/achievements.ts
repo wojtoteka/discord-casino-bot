@@ -11,7 +11,7 @@ export default {
     .setName('achievementy')
     .setNameLocalizations(slashNameLocales('achievements'))
     .setDescription('🏅 Zobacz wszystkie osiągnięcia do zdobycia')
-    .setDescriptionLocalizations(slashLocales('Browse all achievements'))
+    .setDescriptionLocalizations(slashLocales('🏅 Browse all achievements'))
     .addUserOption(option =>
       option
         .setName('użytkownik')

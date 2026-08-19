@@ -8,8 +8,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-lista-zablokowanych')
     .setNameLocalizations(slashNameLocales('admin-list-blocked'))
-    .setDescription('[ADMIN] Wyświetl listę zablokowanych użytkowników')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] List blocked users')),
+    .setDescription('📋 [ADMIN] Wyświetl listę zablokowanych użytkowników')
+    .setDescriptionLocalizations(slashLocales('📋 [ADMIN] List blocked users')),
 
   async execute(interaction: ChatInputCommandInteraction) {
     const denied = denyIfNotAdmin(interaction.user.id);

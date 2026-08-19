@@ -14,8 +14,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-notatka')
     .setNameLocalizations(slashNameLocales('admin-note'))
-    .setDescription('[ADMIN] Dodaj albo pokaż notatki staffu o graczu')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Add or show staff notes on a user'))
+    .setDescription('📝 [ADMIN] Dodaj albo pokaż notatki staffu o graczu')
+    .setDescriptionLocalizations(slashLocales('📝 [ADMIN] Add or show staff notes on a user'))
     .addUserOption(option =>
       option
         .setName('użytkownik')

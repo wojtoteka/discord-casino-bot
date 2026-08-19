@@ -12,8 +12,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('kup-kredyty')
     .setNameLocalizations(slashNameLocales('buy-credits'))
-    .setDescription('🎟️ Kup kredyty za pieniądze')
-    .setDescriptionLocalizations(slashLocales('Buy credits with cash'))
+    .setDescription('💳 Kup kredyty za pieniądze')
+    .setDescriptionLocalizations(slashLocales('💳 Buy credits with cash'))
     .addIntegerOption(option =>
       option
         .setName('ilość')

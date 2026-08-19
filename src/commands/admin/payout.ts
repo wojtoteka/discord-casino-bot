@@ -14,8 +14,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-wyplata')
     .setNameLocalizations(slashNameLocales('admin-payout'))
-    .setDescription('[ADMIN] Zapisz ręczną wypłatę kredytów (księga staffu)')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Log a manual credit payout (staff ledger)'))
+    .setDescription('💵 [ADMIN] Zapisz ręczną wypłatę kredytów (księga staffu)')
+    .setDescriptionLocalizations(slashLocales('💵 [ADMIN] Log a manual credit payout (staff ledger)'))
     .addIntegerOption(option =>
       option
         .setName('kwota')

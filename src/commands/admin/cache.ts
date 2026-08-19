@@ -13,8 +13,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-cache')
     .setNameLocalizations(slashNameLocales('admin-cache'))
-    .setDescription('[ADMIN] Wyczyść cache użytkownika w tym procesie')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Invalidate a user cache entry'))
+    .setDescription('🧹 [ADMIN] Wyczyść cache użytkownika w tym procesie')
+    .setDescriptionLocalizations(slashLocales('🧹 [ADMIN] Invalidate a user cache entry'))
     .addUserOption(option =>
       option
         .setName('użytkownik')

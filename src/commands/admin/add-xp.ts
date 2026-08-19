@@ -13,8 +13,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-daj-xp')
     .setNameLocalizations(slashNameLocales('admin-give-xp'))
-    .setDescription('[ADMIN] Dodaj XP graczowi')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Grant XP to a user'))
+    .setDescription('⭐ [ADMIN] Dodaj XP graczowi')
+    .setDescriptionLocalizations(slashLocales('⭐ [ADMIN] Grant XP to a user'))
     .addIntegerOption(option =>
       option
         .setName('ilość')

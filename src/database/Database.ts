@@ -905,7 +905,7 @@ export class Database extends EventEmitter {
   public async getTopUsers(limit: number = 10): Promise<UserData[]> {
     try {
       const [rows] = await this.pool.execute(
-        'SELECT * FROM users ORDER BY money DESC LIMIT ?',
+        'SELECT * FROM users WHERE is_blocked = FALSE ORDER BY money DESC LIMIT ?',
         [limit]
       );
 
@@ -1050,7 +1050,7 @@ export class Database extends EventEmitter {
   public async getAllUsers(): Promise<UserData[]> {
     try {
       const [rows] = await this.pool.execute(
-        'SELECT * FROM users ORDER BY created_at DESC'
+        'SELECT * FROM users WHERE is_blocked = FALSE ORDER BY created_at DESC'
       );
       return rows as UserData[];
     } catch (error) {

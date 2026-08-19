@@ -8,8 +8,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-nowi')
     .setNameLocalizations(slashNameLocales('admin-new-users'))
-    .setDescription('[ADMIN] Konta utworzone w ostatnich 24h (alts)')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Accounts created in the last 24h (alt check)')),
+    .setDescription('🆕 [ADMIN] Konta utworzone w ostatnich 24h (alts)')
+    .setDescriptionLocalizations(slashLocales('🆕 [ADMIN] Accounts created in the last 24h (alt check)')),
 
   async execute(interaction: ChatInputCommandInteraction) {
     const denied = denyIfNotAdmin(interaction.user.id);

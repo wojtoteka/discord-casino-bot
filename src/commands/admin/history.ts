@@ -13,8 +13,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-historia')
     .setNameLocalizations(slashNameLocales('admin-history'))
-    .setDescription('[ADMIN] Ostatnie gry użytkownika z game_history')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Recent games from game_history'))
+    .setDescription('📜 [ADMIN] Ostatnie gry użytkownika z game_history')
+    .setDescriptionLocalizations(slashLocales('📜 [ADMIN] Recent games from game_history'))
     .addUserOption(option =>
       option
         .setName('użytkownik')

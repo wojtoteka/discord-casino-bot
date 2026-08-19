@@ -47,8 +47,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('zdrapka')
     .setNameLocalizations(slashNameLocales('scratch'))
-    .setDescription('🎟️ Zdrap 3 pola - trzy takie same symbole = wygrana!')
-    .setDescriptionLocalizations(slashLocales('Scratch 3 tiles — three matching symbols win'))
+    .setDescription('🎫 Zdrap 3 pola - trzy takie same symbole = wygrana!')
+    .setDescriptionLocalizations(slashLocales('🎫 Scratch 3 tiles — three matching symbols win'))
     .addIntegerOption(option =>
       option
         .setName('zakład')

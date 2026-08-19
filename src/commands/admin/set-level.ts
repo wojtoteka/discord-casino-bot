@@ -13,8 +13,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-ustaw-poziom')
     .setNameLocalizations(slashNameLocales('admin-set-level'))
-    .setDescription('[ADMIN] Ustaw poziom gracza')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Set a user level'))
+    .setDescription('🆙 [ADMIN] Ustaw poziom gracza')
+    .setDescriptionLocalizations(slashLocales('🆙 [ADMIN] Set a user level'))
     .addIntegerOption(option =>
       option
         .setName('poziom')

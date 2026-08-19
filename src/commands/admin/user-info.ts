@@ -13,8 +13,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-info-uzytkownik')
     .setNameLocalizations(slashNameLocales('admin-user-info'))
-    .setDescription('[ADMIN] Wyświetl szczegółowe informacje o użytkowniku')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Show detailed info about a user'))
+    .setDescription('👤 [ADMIN] Wyświetl szczegółowe informacje o użytkowniku')
+    .setDescriptionLocalizations(slashLocales('👤 [ADMIN] Show detailed info about a user'))
     .addUserOption(option =>
       option
         .setName('użytkownik')

@@ -8,8 +8,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-gry')
     .setNameLocalizations(slashNameLocales('admin-games'))
-    .setDescription('[ADMIN] Wolumen gier 24h i 7d (z game_history)')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] 24h and 7d game volume from game_history')),
+    .setDescription('🎮 [ADMIN] Wolumen gier 24h i 7d (z game_history)')
+    .setDescriptionLocalizations(slashLocales('🎮 [ADMIN] 24h and 7d game volume from game_history')),
 
   async execute(interaction: ChatInputCommandInteraction) {
     const denied = denyIfNotAdmin(interaction.user.id);

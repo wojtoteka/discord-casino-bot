@@ -86,8 +86,8 @@ function rollMultiplier(): number {
 export default {
   data: new SlashCommandBuilder()
     .setName('limbo')
-    .setDescription('🎯 Limbo — ustaw mnożnik. Wylosowany wynik musi go przebić.')
-    .setDescriptionLocalizations(slashLocales('Limbo — set a target multiplier. The roll must beat it'))
+    .setDescription('🚀 Limbo — ustaw mnożnik. Wylosowany wynik musi go przebić.')
+    .setDescriptionLocalizations(slashLocales('🚀 Limbo — set a target multiplier. The roll must beat it'))
     .addIntegerOption(option =>
       option
         .setName('zakład')

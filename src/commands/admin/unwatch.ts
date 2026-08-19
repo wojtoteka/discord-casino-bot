@@ -13,8 +13,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-nie-obserwuj')
     .setNameLocalizations(slashNameLocales('admin-unwatch'))
-    .setDescription('[ADMIN] Usuń gracza z listy obserwowanych')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Remove a user from the watch list'))
+    .setDescription('🙈 [ADMIN] Usuń gracza z listy obserwowanych')
+    .setDescriptionLocalizations(slashLocales('🙈 [ADMIN] Remove a user from the watch list'))
     .addUserOption(option =>
       option
         .setName('użytkownik')

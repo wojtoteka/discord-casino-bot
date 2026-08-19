@@ -10,7 +10,7 @@ export default {
     .setName('zapros')
     .setNameLocalizations(slashNameLocales('invite'))
     .setDescription('🔗 Zaproś RoyalCasino na swój serwer!')
-    .setDescriptionLocalizations(slashLocales('Invite RoyalCasino to your server')),
+    .setDescriptionLocalizations(slashLocales('🔗 Invite RoyalCasino to your server')),
 
   async execute(interaction: ChatInputCommandInteraction) {
     const client = interaction.client as CasinoBot;

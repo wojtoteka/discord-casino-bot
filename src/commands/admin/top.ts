@@ -20,8 +20,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-top')
     .setNameLocalizations(slashNameLocales('admin-top'))
-    .setDescription('[ADMIN] Ranking z ID użytkowników i flagą podejrzeń')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Leaderboard with user IDs and a suspicion flag'))
+    .setDescription('🏆 [ADMIN] Ranking z ID użytkowników i flagą podejrzeń')
+    .setDescriptionLocalizations(slashLocales('🏆 [ADMIN] Leaderboard with user IDs and a suspicion flag'))
     .addIntegerOption(option =>
       option
         .setName('ile')

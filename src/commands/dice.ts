@@ -18,7 +18,7 @@ export default {
   data: new SlashCommandBuilder()
     .setName('dice')
     .setDescription('🎲 Rzuć kością i zgadnij wynik (wygrana 5x)')
-    .setDescriptionLocalizations(slashLocales('Roll a die and guess the result (5x payout)'))
+    .setDescriptionLocalizations(slashLocales('🎲 Roll a die and guess the result (5x payout)'))
     .addIntegerOption(option =>
       option
         .setName('liczba')

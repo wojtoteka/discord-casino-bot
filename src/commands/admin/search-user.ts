@@ -13,8 +13,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-szukaj')
     .setNameLocalizations(slashNameLocales('admin-search'))
-    .setDescription('[ADMIN] Znajdź gracza po Discord ID (bez tworzenia konta)')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Look up a player by Discord ID without creating an account'))
+    .setDescription('🔎 [ADMIN] Znajdź gracza po Discord ID (bez tworzenia konta)')
+    .setDescriptionLocalizations(slashLocales('🔎 [ADMIN] Look up a player by Discord ID without creating an account'))
     .addStringOption(option =>
       option
         .setName('id')

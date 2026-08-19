@@ -13,8 +13,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-referral')
     .setNameLocalizations(slashNameLocales('admin-referral'))
-    .setDescription('[ADMIN] Kod polecenia gracza albo top polecających')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] A user referral code, or top referrers'))
+    .setDescription('🤝 [ADMIN] Kod polecenia gracza albo top polecających')
+    .setDescriptionLocalizations(slashLocales('🤝 [ADMIN] A user referral code, or top referrers'))
     .addUserOption(option =>
       option
         .setName('użytkownik')

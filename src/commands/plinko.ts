@@ -59,7 +59,7 @@ export default {
   data: new SlashCommandBuilder()
     .setName('plinko')
     .setDescription('🔴 Plinko — puść piłkę przez 8 rzędów kołków!')
-    .setDescriptionLocalizations(slashLocales('Plinko — drop a ball through 8 rows of pegs'))
+    .setDescriptionLocalizations(slashLocales('🔴 Plinko — drop a ball through 8 rows of pegs'))
     .addIntegerOption(option =>
       option
         .setName('zakład')

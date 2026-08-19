@@ -14,8 +14,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-dm')
     .setNameLocalizations(slashNameLocales('admin-dm'))
-    .setDescription('[ADMIN] Wyślij jedną wiadomość DM do gracza (odpowiedź na ticket)')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Send one DM embed to a user (ticket reply)'))
+    .setDescription('📩 [ADMIN] Wyślij jedną wiadomość DM do gracza (odpowiedź na ticket)')
+    .setDescriptionLocalizations(slashLocales('📩 [ADMIN] Send one DM embed to a user (ticket reply)'))
     .addStringOption(option =>
       option
         .setName('wiadomość')

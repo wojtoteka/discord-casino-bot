@@ -109,7 +109,7 @@ export default {
     .setName('pomoc')
     .setNameLocalizations(slashNameLocales('help'))
     .setDescription('📖 Poradnik i lista wszystkich komend bota')
-    .setDescriptionLocalizations(slashLocales('Guide and command list')),
+    .setDescriptionLocalizations(slashLocales('📖 Guide and command list')),
 
   async execute(interaction: ChatInputCommandInteraction) {
     const client = interaction.client as CasinoBot;

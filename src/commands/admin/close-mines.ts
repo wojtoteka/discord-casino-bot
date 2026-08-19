@@ -13,8 +13,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-zamknij-miny')
     .setNameLocalizations(slashNameLocales('admin-close-mines'))
-    .setDescription('[ADMIN] Zamknij aktywną sesję min i zwróć zakład')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Close an active mines session and refund the bet'))
+    .setDescription('💣 [ADMIN] Zamknij aktywną sesję min i zwróć zakład')
+    .setDescriptionLocalizations(slashLocales('💣 [ADMIN] Close an active mines session and refund the bet'))
     .addUserOption(option =>
       option
         .setName('użytkownik')

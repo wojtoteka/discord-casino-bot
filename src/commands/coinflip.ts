@@ -14,7 +14,7 @@ export default {
   data: new SlashCommandBuilder()
     .setName('coinflip')
     .setDescription('🪙 Rzuć monetą i postaw zakład (wygrana 2x)')
-    .setDescriptionLocalizations(slashLocales('Flip a coin and bet (2x payout)'))
+    .setDescriptionLocalizations(slashLocales('🪙 Flip a coin and bet (2x payout)'))
     .addStringOption(option =>
       option
         .setName('wybór')

@@ -13,7 +13,7 @@ export default {
     .setName('sprzedaj-kredyty')
     .setNameLocalizations(slashNameLocales('sell-credits'))
     .setDescription('💸 Sprzedaj kredyty za pieniądze')
-    .setDescriptionLocalizations(slashLocales('Sell credits for cash'))
+    .setDescriptionLocalizations(slashLocales('💸 Sell credits for cash'))
     .addIntegerOption(option =>
       option
         .setName('ilość')

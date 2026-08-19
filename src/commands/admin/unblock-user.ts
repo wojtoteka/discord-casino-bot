@@ -8,8 +8,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-odblokuj')
     .setNameLocalizations(slashNameLocales('admin-unblock'))
-    .setDescription('[ADMIN] Odblokuj użytkownika w bocie')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Unblock a user in the bot'))
+    .setDescription('🔓 [ADMIN] Odblokuj użytkownika w bocie')
+    .setDescriptionLocalizations(slashLocales('🔓 [ADMIN] Unblock a user in the bot'))
     .addUserOption(option =>
       option
         .setName('użytkownik')

@@ -40,8 +40,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('kolo')
     .setNameLocalizations(slashNameLocales('wheel'))
-    .setDescription('🎡 Zakręć Kołem Fortuny - wygraj nawet 10x zakładu!')
-    .setDescriptionLocalizations(slashLocales('Spin the Wheel of Fortune — up to 10x'))
+    .setDescription('🎪 Zakręć Kołem Fortuny - wygraj nawet 10x zakładu!')
+    .setDescriptionLocalizations(slashLocales('🎪 Spin the Wheel of Fortune — up to 10x'))
     .addIntegerOption(option =>
       option
         .setName('zakład')

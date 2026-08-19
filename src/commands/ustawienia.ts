@@ -116,8 +116,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('ustawienia')
     .setNameLocalizations(slashNameLocales('settings'))
-    .setDescription('Język bota i przyjmowanie pojedynków')
-    .setDescriptionLocalizations(slashLocales('Bot language and incoming duel challenges')),
+    .setDescription('🔧 Język bota i przyjmowanie pojedynków')
+    .setDescriptionLocalizations(slashLocales('🔧 Bot language and incoming duel challenges')),
 
   async execute(interaction: ChatInputCommandInteraction) {
     const client = interaction.client as CasinoBot;

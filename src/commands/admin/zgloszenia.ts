@@ -13,8 +13,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-zgloszenia')
     .setNameLocalizations(slashNameLocales('admin-reports'))
-    .setDescription('[ADMIN] Panel skrzynki zgłoszeń graczy')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Player report inbox panel'))
+    .setDescription('📬 [ADMIN] Panel skrzynki zgłoszeń graczy')
+    .setDescriptionLocalizations(slashLocales('📬 [ADMIN] Player report inbox panel'))
     .addIntegerOption(option =>
       option
         .setName('zgloszenie')

@@ -13,8 +13,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-obserwuj')
     .setNameLocalizations(slashNameLocales('admin-watch'))
-    .setDescription('[ADMIN] Dodaj gracza do listy obserwowanych')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Add a user to the watch list'))
+    .setDescription('👀 [ADMIN] Dodaj gracza do listy obserwowanych')
+    .setDescriptionLocalizations(slashLocales('👀 [ADMIN] Add a user to the watch list'))
     .addUserOption(option =>
       option
         .setName('użytkownik')

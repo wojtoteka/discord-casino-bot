@@ -8,8 +8,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-sesje')
     .setNameLocalizations(slashNameLocales('admin-sessions'))
-    .setDescription('[ADMIN] Aktywne sesje min (i inne zapisane, jeśli są)')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Active mines sessions (and other persisted sessions)')),
+    .setDescription('🧩 [ADMIN] Aktywne sesje min (i inne zapisane, jeśli są)')
+    .setDescriptionLocalizations(slashLocales('🧩 [ADMIN] Active mines sessions (and other persisted sessions)')),
 
   async execute(interaction: ChatInputCommandInteraction) {
     const denied = denyIfNotAdmin(interaction.user.id);

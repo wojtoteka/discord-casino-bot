@@ -8,8 +8,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-usun-pieniadze')
     .setNameLocalizations(slashNameLocales('admin-remove-money'))
-    .setDescription('[ADMIN] Usuń pieniądze użytkownikowi')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Remove money from a user'))
+    .setDescription('💸 [ADMIN] Usuń pieniądze użytkownikowi')
+    .setDescriptionLocalizations(slashLocales('💸 [ADMIN] Remove money from a user'))
     .addUserOption(option =>
       option
         .setName('użytkownik')

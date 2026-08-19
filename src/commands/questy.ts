@@ -16,7 +16,7 @@ export default {
     .setName('questy')
     .setNameLocalizations(slashNameLocales('quests'))
     .setDescription('🎯 Sprawdź swoje dzienne questy i odbierz nagrody!')
-    .setDescriptionLocalizations(slashLocales('Check daily quests and claim rewards')),
+    .setDescriptionLocalizations(slashLocales('🎯 Check daily quests and claim rewards')),
 
   async execute(interaction: ChatInputCommandInteraction) {
     const client = interaction.client as CasinoBot;

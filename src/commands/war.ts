@@ -41,8 +41,8 @@ function warAgainRow(bet: number, userId: string, lang: 'pl' | 'en') {
 export default {
   data: new SlashCommandBuilder()
     .setName('war')
-    .setDescription('⚔️ Wojna karciana - Twoja karta vs krupiera!')
-    .setDescriptionLocalizations(slashLocales('Card war — your card vs the dealer'))
+    .setDescription('🎴 Wojna karciana - Twoja karta vs krupiera!')
+    .setDescriptionLocalizations(slashLocales('🎴 Card war — your card vs the dealer'))
     .addIntegerOption(option =>
       option
         .setName('zakład')

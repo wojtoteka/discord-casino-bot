@@ -14,8 +14,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-zablokuj')
     .setNameLocalizations(slashNameLocales('admin-block'))
-    .setDescription('[ADMIN] Zablokuj użytkownika w bocie')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Block a user from the bot'))
+    .setDescription('🚫 [ADMIN] Zablokuj użytkownika w bocie')
+    .setDescriptionLocalizations(slashLocales('🚫 [ADMIN] Block a user from the bot'))
     .addUserOption(option =>
       option
         .setName('użytkownik')

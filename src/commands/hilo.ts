@@ -62,7 +62,7 @@ export default {
   data: new SlashCommandBuilder()
     .setName('hilo')
     .setDescription('🔼 Wyższa czy Niższa? Zgadnij i mnóż wygraną!')
-    .setDescriptionLocalizations(slashLocales('Higher or lower? Guess and stack the multiplier'))
+    .setDescriptionLocalizations(slashLocales('🔼 Higher or lower? Guess and stack the multiplier'))
     .addIntegerOption(option =>
       option
         .setName('zakład')

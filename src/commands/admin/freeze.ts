@@ -14,8 +14,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-freeze')
     .setNameLocalizations(slashNameLocales('admin-freeze'))
-    .setDescription('[ADMIN] Zamroź konto — brak gier i kupna/sprzedaży kredytów')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Freeze a user: no games or credit buy/sell'))
+    .setDescription('🧊 [ADMIN] Zamroź konto — brak gier i kupna/sprzedaży kredytów')
+    .setDescriptionLocalizations(slashLocales('🧊 [ADMIN] Freeze a user: no games or credit buy/sell'))
     .addUserOption(option =>
       option
         .setName('użytkownik')

@@ -32,7 +32,7 @@ export default {
   data: new SlashCommandBuilder()
     .setName('daily')
     .setDescription('🎁 Odbierz dzienny bonus ze streakiem!')
-    .setDescriptionLocalizations(slashLocales('Claim your daily bonus and streak')),
+    .setDescriptionLocalizations(slashLocales('🎁 Claim your daily bonus and streak')),
 
   async execute(interaction: ChatInputCommandInteraction) {
     const client = interaction.client as CasinoBot;

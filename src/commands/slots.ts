@@ -14,7 +14,7 @@ export default {
   data: new SlashCommandBuilder()
     .setName('slots')
     .setDescription('🎰 Zagraj na automacie - postaw od 1 do 20 kredytów!')
-    .setDescriptionLocalizations(slashLocales('Slot machine — bet 1 to 20 credits'))
+    .setDescriptionLocalizations(slashLocales('🎰 Slot machine — bet 1 to 20 credits'))
     .addIntegerOption(option =>
       option
         .setName('zakład')

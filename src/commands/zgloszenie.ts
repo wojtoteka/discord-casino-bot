@@ -287,8 +287,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('zgłoszenie')
     .setNameLocalizations(slashNameLocales('report'))
-    .setDescription('Zgłoś błąd, nadużycie albo inny problem do właściciela bota')
-    .setDescriptionLocalizations(slashLocales('Report a bug, abuse, or other issue to the bot owner'))
+    .setDescription('🚨 Zgłoś błąd, nadużycie albo inny problem do właściciela bota')
+    .setDescriptionLocalizations(slashLocales('🚨 Report a bug, abuse, or other issue to the bot owner'))
     .addUserOption(option =>
       option
         .setName('użytkownik')

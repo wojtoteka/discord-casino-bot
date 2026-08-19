@@ -17,8 +17,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-log')
     .setNameLocalizations(slashNameLocales('admin-log'))
-    .setDescription('[ADMIN] Ostatnie wpisy audytu administracyjnego')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Recent admin audit log entries'))
+    .setDescription('🧾 [ADMIN] Ostatnie wpisy audytu administracyjnego')
+    .setDescriptionLocalizations(slashLocales('🧾 [ADMIN] Recent admin audit log entries'))
     .addUserOption(option =>
       option
         .setName('użytkownik')

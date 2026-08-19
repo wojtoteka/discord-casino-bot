@@ -10,7 +10,7 @@ export default {
     .setName('ranking')
     .setNameLocalizations(slashNameLocales('leaderboard'))
     .setDescription('🏆 Zobacz najbogatszych graczy')
-    .setDescriptionLocalizations(slashLocales('See the richest players'))
+    .setDescriptionLocalizations(slashLocales('🏆 See the richest players'))
     .addIntegerOption(option =>
       option
         .setName('limit')

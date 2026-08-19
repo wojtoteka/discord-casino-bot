@@ -19,8 +19,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-osiagniecie')
     .setNameLocalizations(slashNameLocales('admin-achievement'))
-    .setDescription('[ADMIN] Przyznaj albo zabierz osiągnięcie')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Grant or revoke an achievement'))
+    .setDescription('🏅 [ADMIN] Przyznaj albo zabierz osiągnięcie')
+    .setDescriptionLocalizations(slashLocales('🏅 [ADMIN] Grant or revoke an achievement'))
     .addSubcommand(sub =>
       sub
         .setName('przyznaj')

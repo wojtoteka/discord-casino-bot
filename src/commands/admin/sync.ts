@@ -11,8 +11,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-sync')
     .setNameLocalizations(slashNameLocales('admin-sync'))
-    .setDescription('[ADMIN] Sprawdź stan bota i wyczyść porzucone sesje')
-    .setDescriptionLocalizations(slashLocales('[ADMIN] Check bot health and clear stale sessions')),
+    .setDescription('🔄 [ADMIN] Sprawdź stan bota i wyczyść porzucone sesje')
+    .setDescriptionLocalizations(slashLocales('🔄 [ADMIN] Check bot health and clear stale sessions')),
 
   async execute(interaction: ChatInputCommandInteraction) {
     if (interaction.user.id !== ADMIN_ID) {

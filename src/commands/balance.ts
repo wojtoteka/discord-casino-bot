@@ -10,7 +10,7 @@ export default {
   data: new SlashCommandBuilder()
     .setName('balance')
     .setDescription('💰 Sprawdź swój aktualny balans')
-    .setDescriptionLocalizations(slashLocales('Check your current balance'))
+    .setDescriptionLocalizations(slashLocales('💰 Check your current balance'))
     .addUserOption(option =>
       option
         .setName('użytkownik')

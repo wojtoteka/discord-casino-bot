@@ -14,7 +14,7 @@ export default {
     .setName('ruletka')
     .setNameLocalizations(slashNameLocales('roulette'))
     .setDescription('🎡 Zagraj w ruletkę europejską!')
-    .setDescriptionLocalizations(slashLocales('Play European roulette'))
+    .setDescriptionLocalizations(slashLocales('🎡 Play European roulette'))
     .addStringOption(option =>
       option
         .setName('typ')

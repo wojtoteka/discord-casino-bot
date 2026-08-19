@@ -183,8 +183,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('ustawienia-serwera')
     .setNameLocalizations(slashNameLocales('server-settings'))
-    .setDescription('Panel kasyna na tym serwerze: kanał i pojedynki (zarządzanie serwerem)')
-    .setDescriptionLocalizations(slashLocales('Casino panel for this server: channel and duels (Manage Server)'))
+    .setDescription('🧰 Panel kasyna na tym serwerze: kanał i pojedynki (zarządzanie serwerem)')
+    .setDescriptionLocalizations(slashLocales('🧰 Casino panel for this server: channel and duels (Manage Server)'))
     .setDMPermission(false)
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 

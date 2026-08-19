@@ -26,7 +26,7 @@ export default {
   data: new SlashCommandBuilder()
     .setName('crash')
     .setDescription('📈 Gra Crash - wypłać zanim spadnie!')
-    .setDescriptionLocalizations(slashLocales('Crash — cash out before it drops'))
+    .setDescriptionLocalizations(slashLocales('📈 Crash — cash out before it drops'))
     .addIntegerOption(option =>
       option
         .setName('zakład')

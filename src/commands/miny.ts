@@ -81,7 +81,7 @@ export default {
     .setName('miny')
     .setNameLocalizations(slashNameLocales('mines'))
     .setDescription('💣 Gra Miny — odkrywaj kafelki, unikaj min, wypłać w odpowiednim momencie!')
-    .setDescriptionLocalizations(slashLocales('Mines — reveal tiles, avoid mines, cash out'))
+    .setDescriptionLocalizations(slashLocales('💣 Mines — reveal tiles, avoid mines, cash out'))
     .addIntegerOption(option =>
       option
         .setName('zakład')

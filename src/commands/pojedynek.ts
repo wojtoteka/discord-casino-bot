@@ -51,8 +51,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('pojedynek')
     .setNameLocalizations(slashNameLocales('duel'))
-    .setDescription('⚔️ Pojedynek PvP — rzuć wyzwanie innemu graczowi (50/50)')
-    .setDescriptionLocalizations(slashLocales('PvP duel — challenge another player (50/50)'))
+    .setDescription('🤺 Pojedynek PvP — rzuć wyzwanie innemu graczowi (50/50)')
+    .setDescriptionLocalizations(slashLocales('🤺 PvP duel — challenge another player (50/50)'))
     .addUserOption(option =>
       option
         .setName('użytkownik')
