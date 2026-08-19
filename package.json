@@ -1,0 +1,49 @@
+{
+  "name": "casino-bot",
+  "version": "1.0.0",
+  "description": "Modern Discord Casino Bot with TypeScript and Discord.js v14",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "npm run build && node dist/start-bots.js",
+    "start:casino": "node dist/index.js",
+    "start:admin": "node dist/admin-bot.js",
+    "dev": "ts-node src/start-bots.ts",
+    "watch": "tsc -w",
+    "deploy": "node scripts/deploy-commands.js",
+    "deploy:casino": "node scripts/deploy-casino.js",
+    "deploy:admin": "node scripts/deploy-admin.js"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "casino",
+    "gambling",
+    "games",
+    "typescript"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@discordjs/builders": "^1.13.0",
+    "@discordjs/rest": "^2.6.0",
+    "@top-gg/sdk": "^3.1.6",
+    "discord-api-types": "^0.38.31",
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.7",
+    "mysql2": "^3.15.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "overrides": {
+    "@top-gg/sdk": {
+      "undici": "^7.2.0"
+    }
+  }
+}
