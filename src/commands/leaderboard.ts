@@ -50,10 +50,10 @@ export default {
       const medal    = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `\`${rank}.\``;
       const result   = usernameResults[i];
       const username = result.status === 'fulfilled' ? result.value.username : t(lang, 'unknown_user');
-      leaderboardText += `${medal} **${username}** — ${GameHelper.formatMoney(topUsers[i].money)}\n`;
+      leaderboardText += `${medal} **${username}** - ${GameHelper.formatMoney(topUsers[i].money)}\n`;
     }
 
-    // Find current user position — limit to 500 max instead of 1000
+    // Find current user position - limit to 500 max instead of 1000
     const allUsers = await client.db.getTopUsers(500);
     const userPos  = allUsers.findIndex(u => u.user_id === interaction.user.id);
     const userData = userPos >= 0 ? allUsers[userPos] : null;

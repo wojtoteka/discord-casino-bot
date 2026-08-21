@@ -53,6 +53,6 @@ export async function sendAdminAlert(
     await admin.send({ embeds: [embed] });
     markSent(payload.userId, payload.kind);
   } catch {
-    // DMs closed or fetch failed — do not throw, do not post in guilds.
+    // DMs closed or fetch failed - do not throw, do not post in guilds.
   }
 }

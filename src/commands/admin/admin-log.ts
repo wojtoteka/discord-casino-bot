@@ -105,7 +105,7 @@ export default {
         const reason = e.reason ? `\n　Powód: ${e.reason}` : '';
         const extra = details ? `\n　${details}` : '';
         return (
-          `${auditActionLabel(e.action)} · \`${e.target_user_id || '—'}\` · ${discordTime(Number(e.created_at))}` +
+          `${auditActionLabel(e.action)} · \`${e.target_user_id || '-'}\` · ${discordTime(Number(e.created_at))}` +
           extra +
           reason
         );

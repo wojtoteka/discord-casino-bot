@@ -78,7 +78,7 @@ export default {
       const label = await fetchUserLabel(interaction.client, target.id);
       const body = notes.length === 0
         ? 'Brak notatek.'
-        : notes.map(n => `• ${formatPlTime(n.created_at)} — ${n.note}`).join('\n\n');
+        : notes.map(n => `• ${formatPlTime(n.created_at)} - ${n.note}`).join('\n\n');
       const description = `**Użytkownik:** ${label}\n**ID:** \`${target.id}\`\n\n${body}`;
       await interaction.reply({
         embeds: [EmbedHelper.infoEmbed(

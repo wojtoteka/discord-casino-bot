@@ -39,7 +39,7 @@ function formatCard(card: { value: string; suit: string }): string {
 
 /**
  * How many of the 13 ranks beat the current card in the chosen direction.
- * Ties do NOT count — a draw loses, so the two directions never overlap.
+ * Ties do NOT count - a draw loses, so the two directions never overlap.
  */
 function winningCards(currentCard: { rank: number }, direction: 'higher' | 'lower'): number {
   return direction === 'higher'
@@ -50,7 +50,7 @@ function winningCards(currentCard: { rank: number }, direction: 'higher' | 'lowe
 /**
  * Payout derived from the real odds, not a coarse tier table.
  * Fair return is 13 / winningCards; HOUSE_EDGE shaves the casino's cut off it.
- * Returns 0 when the direction cannot win — the button is disabled in that case.
+ * Returns 0 when the direction cannot win - the button is disabled in that case.
  */
 function calculateMultiplier(currentCard: { rank: number }, direction: 'higher' | 'lower'): number {
   const wins = winningCards(currentCard, direction);

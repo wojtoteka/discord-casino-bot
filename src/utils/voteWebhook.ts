@@ -36,7 +36,7 @@ function verifyTopGGSignature(
   const v1 = parts['v1'];
   if (!t || !v1) return { ok: false, reason: 'nieprawidłowy format podpisu' };
 
-  // Ochrona przed replay – znacznik czasu musi być świeży (10 min tolerancji).
+  // Ochrona przed replay - znacznik czasu musi być świeży (10 min tolerancji).
   const ts = parseInt(t, 10);
   if (!Number.isFinite(ts) || Math.abs(Date.now() / 1000 - ts) > 600) {
     return { ok: false, reason: 'znacznik czasu poza tolerancją (replay lub zła godzina serwera)' };
@@ -69,17 +69,17 @@ async function processVote(client: CasinoBot, userId: string, isWeekend: boolean
   const lastVote = await client.db.getLastVote(userId);
   const cooldownMs = 12 * 60 * 60 * 1000;
   if (lastVote && Date.now() - lastVote < cooldownMs) {
-    console.log(`[VOTE] ${userId} już nagrodzony w ciągu 12h – pomijam.`);
+    console.log(`[VOTE] ${userId} już nagrodzony w ciągu 12h - pomijam.`);
     return;
   }
 
   const bonus = isWeekend ? ECONOMY.voteBonus * 2 : ECONOMY.voteBonus;
   await client.db.recordVote(userId, bonus);
-  console.log(`[VOTE] ${userId} zagłosował – nagroda $${bonus.toLocaleString()} przyznana${isWeekend ? ' (weekend x2)' : ''}.`);
+  console.log(`[VOTE] ${userId} zagłosował - nagroda $${bonus.toLocaleString()} przyznana${isWeekend ? ' (weekend x2)' : ''}.`);
 
   try {
     const user = await client.users.fetch(userId);
-    const weekendText = isWeekend ? '\n\n🌟 **Weekend bonus** – nagroda podwójona!' : '';
+    const weekendText = isWeekend ? '\n\n🌟 **Weekend bonus** - nagroda podwójona!' : '';
     const embed = new EmbedBuilder()
       .setColor(0xFFD700)
       .setTitle('🗳️ Dziękujemy za głosowanie!')
@@ -92,7 +92,7 @@ async function processVote(client: CasinoBot, userId: string, isWeekend: boolean
     await user.send({ embeds: [embed] });
     console.log(`[VOTE] DM wysłane do ${userId}.`);
   } catch {
-    // DMs disabled by user – skip silently
+    // DMs disabled by user - skip silently
   }
 }
 
@@ -122,12 +122,12 @@ function makeHandler(secret: string, client: CasinoBot) {
       return;
     }
 
-    // Odpowiadamy od razu – top.gg wymaga 200 w ciągu 5 sekund.
+    // Odpowiadamy od razu - top.gg wymaga 200 w ciągu 5 sekund.
     res.writeHead(200).end();
 
     const type = payload.type ?? '';
     if (type.includes('test')) {
-      console.log('[VOTE] Webhook test otrzymany – podpis poprawny, system działa. ✅');
+      console.log('[VOTE] Webhook test otrzymany - podpis poprawny, system działa. ✅');
       return;
     }
 
@@ -154,7 +154,7 @@ export function startVoteWebhook(client: CasinoBot): void {
   const sslKey  = process.env.TOPGG_SSL_KEY  || '';
 
   if (!secret) {
-    console.warn('[VOTE] TOPGG_WEBHOOK_AUTH nie ustawiony – webhook nieaktywny.');
+    console.warn('[VOTE] TOPGG_WEBHOOK_AUTH nie ustawiony - webhook nieaktywny.');
     return;
   }
 
@@ -175,7 +175,7 @@ export function startVoteWebhook(client: CasinoBot): void {
       });
     } catch (err: any) {
       console.error('[VOTE] Błąd wczytywania certyfikatów SSL:', err?.message ?? err);
-      console.warn('[VOTE] Fallback na HTTP – top.gg może odrzucić żądania bez HTTPS!');
+      console.warn('[VOTE] Fallback na HTTP - top.gg może odrzucić żądania bez HTTPS!');
       server = createHttpServer(handler);
       server.listen(port, () => {
         console.log(`[VOTE] Webhook HTTP server aktywny na porcie ${port} (brak SSL)`);

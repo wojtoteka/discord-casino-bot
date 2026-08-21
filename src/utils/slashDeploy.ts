@@ -37,11 +37,11 @@ export async function registerSlashCommands(
   const prefix = options.label;
 
   if (!appId) {
-    console.error(`[${prefix}] Nie można zarejestrować komend — brak client.user.id`);
+    console.error(`[${prefix}] Nie można zarejestrować komend - brak client.user.id`);
     return;
   }
   if (body.length === 0) {
-    console.error(`[${prefix}] 0 komend do rejestracji — pomijam REST.put`);
+    console.error(`[${prefix}] 0 komend do rejestracji - pomijam REST.put`);
     return;
   }
 

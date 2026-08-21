@@ -1,5 +1,5 @@
 // ============================================================
-// RoyalCasino — centralized constants (Faza A)
+// RoyalCasino - centralized constants (Faza A)
 // All game tuning, economy, and brand values live here.
 // ============================================================
 

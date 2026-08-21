@@ -186,7 +186,7 @@ function buildPayoutDetailPayload(state: PayoutsPanelState, payout: PayoutRow): 
     .setTitle(`${statusEmoji(payout.status)} Wypłata #${payout.id}`)
     .setColor(statusColor(payout.status))
     .setDescription(
-      'To tylko księga staffu — zmiana statusu nie rusza salda gracza.',
+      'To tylko księga staffu - zmiana statusu nie rusza salda gracza.',
     )
     .addFields(
       { name: 'Użytkownik', value: `<@${payout.user_id}> (\`${payout.user_id}\`)`, inline: false },
@@ -194,7 +194,7 @@ function buildPayoutDetailPayload(state: PayoutsPanelState, payout: PayoutRow): 
       { name: 'Status', value: `${statusEmoji(payout.status)} ${payout.status}`, inline: true },
       { name: 'Zapisano', value: discordTime(payout.created_at), inline: true },
       { name: 'Zapisał', value: `<@${payout.admin_id}>`, inline: true },
-      { name: 'Notatka', value: (payout.note || '—').slice(0, 1024), inline: false },
+      { name: 'Notatka', value: (payout.note || '-').slice(0, 1024), inline: false },
     )
     .setFooter({ text: `${BRAND.footerText} · Panel administracyjny` })
     .setTimestamp();

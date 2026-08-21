@@ -19,8 +19,8 @@ export default {
       option
         .setName('poziom')
         .setNameLocalizations(slashNameLocales('level'))
-        .setDescription('Nowy poziom (1–999)')
-        .setDescriptionLocalizations(slashLocales('New level (1–999)'))
+        .setDescription('Nowy poziom (1-999)')
+        .setDescriptionLocalizations(slashLocales('New level (1-999)'))
         .setRequired(true)
         .setMinValue(1)
         .setMaxValue(999),

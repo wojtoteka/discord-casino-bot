@@ -16,7 +16,7 @@ const GRID = GAMES.mines.gridSize;
 const COLS = 5;
 const TILE_ROWS = GRID / COLS;
 
-/** Row 0: cashout. Rows 1–4: tiles 0–19. Discord max 5 rows. */
+/** Row 0: cashout. Rows 1-4: tiles 0-19. Discord max 5 rows. */
 function buildMinesGrid(
   session: import('../database/Database').MinesSession,
   revealAll: boolean,
@@ -80,8 +80,8 @@ export default {
   data: new SlashCommandBuilder()
     .setName('miny')
     .setNameLocalizations(slashNameLocales('mines'))
-    .setDescription('💣 Gra Miny — odkrywaj kafelki, unikaj min, wypłać w odpowiednim momencie!')
-    .setDescriptionLocalizations(slashLocales('💣 Mines — reveal tiles, avoid mines, cash out'))
+    .setDescription('💣 Gra Miny - odkrywaj kafelki, unikaj min, wypłać w odpowiednim momencie!')
+    .setDescriptionLocalizations(slashLocales('💣 Mines - reveal tiles, avoid mines, cash out'))
     .addIntegerOption(option =>
       option
         .setName('zakład')
@@ -95,8 +95,8 @@ export default {
       option
         .setName('miny')
         .setNameLocalizations(slashNameLocales('mines'))
-        .setDescription(`Liczba min na planszy (1–${GAMES.mines.maxMines}, domyślnie 3)`)
-        .setDescriptionLocalizations(slashLocales(`Number of mines on the board (1–${GAMES.mines.maxMines}, default 3)`))
+        .setDescription(`Liczba min na planszy (1-${GAMES.mines.maxMines}, domyślnie 3)`)
+        .setDescriptionLocalizations(slashLocales(`Number of mines on the board (1-${GAMES.mines.maxMines}, default 3)`))
         .setRequired(false)
         .setMinValue(1)
         .setMaxValue(GAMES.mines.maxMines),

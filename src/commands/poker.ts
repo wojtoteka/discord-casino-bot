@@ -279,7 +279,7 @@ async function handleShowdown(
       details: [
         ['Układ', playerScore.name],
         ['Twoja ręka', formatHand(game.playerHand)],
-        ['Krupier', `${formatHand(dealerHand)} — ${dealerScore.name}`],
+        ['Krupier', `${formatHand(dealerHand)} - ${dealerScore.name}`],
         ['Stół', formatHand(game.communityCards)],
         ['Pula', formatUsd(game.pot)],
       ],
@@ -300,7 +300,7 @@ async function handleShowdown(
       balance: loseBalance,
       details: [
         ['Krupier', dealerScore.name],
-        ['Twoja ręka', `${formatHand(game.playerHand)} — ${playerScore.name}`],
+        ['Twoja ręka', `${formatHand(game.playerHand)} - ${playerScore.name}`],
         ['Karty krupiera', formatHand(dealerHand)],
         ['Stół', formatHand(game.communityCards)],
       ],
@@ -313,14 +313,14 @@ async function handleShowdown(
     const tieBalance = (await client.db.getUser(userId)).money;
     resultEmbed = infoGameEmbed(
       'Poker',
-      'Remis — zakład zwrócony.',
+      'Remis - zakład zwrócony.',
       {
         bet: game.playerBet,
         result: 'Remis',
         balance: tieBalance,
         details: [
-          ['Twoja ręka', `${formatHand(game.playerHand)} — ${playerScore.name}`],
-          ['Krupier', `${formatHand(dealerHand)} — ${dealerScore.name}`],
+          ['Twoja ręka', `${formatHand(game.playerHand)} - ${playerScore.name}`],
+          ['Krupier', `${formatHand(dealerHand)} - ${dealerScore.name}`],
           ['Stół', formatHand(game.communityCards)],
         ],
       },

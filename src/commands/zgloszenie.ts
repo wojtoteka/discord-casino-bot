@@ -53,7 +53,7 @@ function channelLabel(
   channelId: string | null | undefined,
   channelName?: string | null,
 ): string {
-  if (!channelId) return '—';
+  if (!channelId) return '-';
   if (channelName) return `${channelName} (\`${channelId}\`)`;
   return `<#${channelId}> (\`${channelId}\`)`;
 }
@@ -75,7 +75,7 @@ function buildReportAlertEmbed(input: {
     ? (input.reportedTag
       ? `${input.reportedTag} (\`${input.reportedId}\`)`
       : `\`${input.reportedId}\``)
-    : '—';
+    : '-';
   const reporterValue = input.reporterTag
     ? `${input.reporterTag} (\`${input.reporterId}\`)`
     : `\`${input.reporterId}\``;

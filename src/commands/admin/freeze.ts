@@ -14,7 +14,7 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-freeze')
     .setNameLocalizations(slashNameLocales('admin-freeze'))
-    .setDescription('🧊 [ADMIN] Zamroź konto — brak gier i kupna/sprzedaży kredytów')
+    .setDescription('🧊 [ADMIN] Zamroź konto - brak gier i kupna/sprzedaży kredytów')
     .setDescriptionLocalizations(slashLocales('🧊 [ADMIN] Freeze a user: no games or credit buy/sell'))
     .addUserOption(option =>
       option
@@ -99,7 +99,7 @@ export default {
           '❄️ Konto zamrożone',
           `**Użytkownik:** ${label}\n**ID:** \`${target.id}\`\n` +
           `Nie może grać ani kupować/sprzedawać kredytów.\n` +
-          `To nie jest blokada — profil i zgłoszenia nadal działają.\n` +
+          `To nie jest blokada - profil i zgłoszenia nadal działają.\n` +
           (reason ? `**Powód:** ${reason}` : ''),
         )],
         flags: 64,

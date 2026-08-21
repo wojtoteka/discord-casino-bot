@@ -29,7 +29,7 @@ async function runStartupHealthCheck(client: CasinoBot): Promise<void> {
     const webhookAuth = !!(process.env.TOPGG_WEBHOOK_AUTH);
     const pollerToken = !!(process.env.TOPGG_API_TOKEN);
     if (!webhookAuth && !pollerToken) {
-      console.warn('⚠️  [ROYALCASINO] Brak TOPGG_WEBHOOK_AUTH i TOPGG_API_TOKEN — głosowania nie będą nagradzane!');
+      console.warn('⚠️  [ROYALCASINO] Brak TOPGG_WEBHOOK_AUTH i TOPGG_API_TOKEN - głosowania nie będą nagradzane!');
     } else if (webhookAuth) {
       console.log(`✅ [ROYALCASINO] Webhook top.gg skonfigurowany`);
     } else {

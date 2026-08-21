@@ -13,7 +13,7 @@ export default {
   data: new SlashCommandBuilder()
     .setName('admin-odmroz')
     .setNameLocalizations(slashNameLocales('admin-unfreeze'))
-    .setDescription('🔥 [ADMIN] Odmroź konto — przywróć gry i kredyty')
+    .setDescription('🔥 [ADMIN] Odmroź konto - przywróć gry i kredyty')
     .setDescriptionLocalizations(slashLocales('🔥 [ADMIN] Unfreeze a user'))
     .addUserOption(option =>
       option

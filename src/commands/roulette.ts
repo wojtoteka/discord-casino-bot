@@ -132,11 +132,11 @@ export default {
       case 'number': won = result === number; multiplier = 35; winDescription = `🎯 ${number}`; break;
       case 'even':   won = isEven; multiplier = 2; winDescription = '📊 Parzysta'; break;
       case 'odd':    won = isOdd; multiplier = 2; winDescription = '📊 Nieparzysta'; break;
-      case 'low':    won = result >= 1 && result <= 18; multiplier = 2; winDescription = '🔽 1–18'; break;
-      case 'high':   won = result >= 19 && result <= 36; multiplier = 2; winDescription = '🔼 19–36'; break;
-      case 'dozen1': won = result >= 1 && result <= 12; multiplier = 3; winDescription = '1–12'; break;
-      case 'dozen2': won = result >= 13 && result <= 24; multiplier = 3; winDescription = '13–24'; break;
-      case 'dozen3': won = result >= 25 && result <= 36; multiplier = 3; winDescription = '25–36'; break;
+      case 'low':    won = result >= 1 && result <= 18; multiplier = 2; winDescription = '🔽 1-18'; break;
+      case 'high':   won = result >= 19 && result <= 36; multiplier = 2; winDescription = '🔼 19-36'; break;
+      case 'dozen1': won = result >= 1 && result <= 12; multiplier = 3; winDescription = '1-12'; break;
+      case 'dozen2': won = result >= 13 && result <= 24; multiplier = 3; winDescription = '13-24'; break;
+      case 'dozen3': won = result >= 25 && result <= 36; multiplier = 3; winDescription = '25-36'; break;
     }
 
     const payout = won ? bet * multiplier : 0;

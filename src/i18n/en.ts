@@ -1,6 +1,6 @@
 import type { Locale } from './pl';
 
-// American English translations — same keys as pl.ts
+// American English translations - same keys as pl.ts
 export const en: Locale = {
   error_insufficient_funds: (bet: number, has: number) =>
     `You need **$${bet.toLocaleString()}** but you only have **$${has.toLocaleString()}**.`,
@@ -99,8 +99,8 @@ export const en: Locale = {
   slots_spinning: '🎰 Spinning the reels...',
   slots_title:    '🎰 Slots',
   slots_jackpot:  '💎 **Jackpot**',
-  slots_triple:   (sym: string, multi: number) => `${sym}${sym}${sym} — **${multi}x** your bet`,
-  slots_two:      'Two of a kind — pairs pay ×2 and up depending on the symbol',
+  slots_triple:   (sym: string, multi: number) => `${sym}${sym}${sym} - **${multi}x** your bet`,
+  slots_two:      'Two of a kind - pairs pay ×2 and up depending on the symbol',
   slots_none:     'No win',
   slots_win:  (amount: number, credits: number) =>
     `💰 +$${amount.toLocaleString()} | 🎟️ Left: **${credits}**`,
@@ -139,7 +139,7 @@ export const en: Locale = {
   settings_hint:             'Default: Polish, duels on. Off only blocks incoming challenges.',
 
   quests_title:     '🎯 Daily quests',
-  quests_none:      '*No active quests — check back tomorrow.*',
+  quests_none:      '*No active quests - check back tomorrow.*',
   quests_progress:  (done: number, total: number) => `${done} / ${total}`,
   quests_completed: '✅ **Done**',
   quests_reward:    (money: number, xp: number) =>
@@ -151,9 +151,9 @@ export const en: Locale = {
 
   mines_title:        '💣 Mines',
   mines_in_progress:  'You already have a Mines game in progress.',
-  mines_select_mines: '⚙️ Pick how many mines (1–15):',
+  mines_select_mines: '⚙️ Pick how many mines (1-15):',
   mines_game_start:   (mines: number, bet: number) =>
-    `Bet: **$${bet.toLocaleString()}** · Mines: **${mines}**\nReveal tiles — cash out before you hit a mine.`,
+    `Bet: **$${bet.toLocaleString()}** · Mines: **${mines}**\nReveal tiles - cash out before you hit a mine.`,
   mines_safe:         '✅ Safe',
   mines_hit:          '💥 Mine',
   mines_cashout_btn:  '💸 Cash out',
@@ -206,7 +206,7 @@ export const en: Locale = {
   duel_declined_content:      'Challenge declined.',
   duel_declined_desc:         'The challenge was declined. Nothing was taken.',
   duel_rolling_content:       'Picking a winner…',
-  duel_rolling_desc:          "Fair 50/50 — the house doesn't take a cut.",
+  duel_rolling_desc:          "Fair 50/50 - the house doesn't take a cut.",
   duel_already_done_title:    'Already over',
   duel_already_done:          'This challenge is already settled.',
   duel_too_late_title:        'Too late',
@@ -217,7 +217,7 @@ export const en: Locale = {
   duel_already_accepted:      'This challenge is already handled.',
   duel_no_funds_content:      'Not enough cash.',
   duel_no_funds:              (lines: string) =>
-    `Couldn't start the duel — not enough cash.\n${lines}\n\nNothing was taken.`,
+    `Couldn't start the duel - not enough cash.\n${lines}\n\nNothing was taken.`,
   duel_short_line:            (user: string, money: number, bet: number) =>
     `${user} has **$${money.toLocaleString()}**, needs **$${bet.toLocaleString()}**.`,
   duel_win_sentence:          (winner: string, pool: string) =>
@@ -257,9 +257,9 @@ export const en: Locale = {
   limbo_checking:  'Checking the result...',
   limbo_target:    'Target',
   limbo_payout:    (amount: string) => `Payout ${amount} (stake × target)`,
-  limbo_miss:      'Target missed — the stake is gone.',
-  limbo_hit:       (rolled: string, target: string) => `Hit — ${rolled} beats ${target}`,
-  limbo_miss_result: (rolled: string, target: string) => `Miss — ${rolled} does not beat ${target}`,
+  limbo_miss:      'Target missed - the stake is gone.',
+  limbo_hit:       (rolled: string, target: string) => `Hit - ${rolled} beats ${target}`,
+  limbo_miss_result: (rolled: string, target: string) => `Miss - ${rolled} does not beat ${target}`,
 
   play_again_missing: (game: string) => `Use \`/${game}\` to play again.`,
   game_in_progress_title: 'Game in progress',
@@ -300,7 +300,7 @@ export const en: Locale = {
   referral_dm: (name: string, amount: number) =>
     `**${name}** used your referral code.\nYou received **$${amount.toLocaleString()}**.`,
   referral_intro: (amount: number) =>
-    `Invite friends — you both get **$${amount.toLocaleString()}**.`,
+    `Invite friends - you both get **$${amount.toLocaleString()}**.`,
   referral_your_code: 'Your referral code',
   referral_stats: 'Stats',
   referral_count: (n: number) => `People referred: **${n}**`,
@@ -336,7 +336,7 @@ export const en: Locale = {
   profile_age: 'Account age',
   profile_age_days: (n: number) => `${n} days`,
   profile_age_new: 'New account',
-  profile_no_achievements: 'No achievements yet — play to unlock them.',
+  profile_no_achievements: 'No achievements yet - play to unlock them.',
   profile_more: (n: number) => `+${n} more…`,
   profile_error: "Couldn't load this profile.",
 
@@ -350,7 +350,7 @@ export const en: Locale = {
   help_placeholder: 'Pick a category...',
   help_games_intro: 'Game overview. Each game has its own minimum bet.',
   help_kolo_payouts: '0× · 0.5× · 1× · 2× · 5× · 10×',
-  help_slots_payouts: 'Credits 1–20. Triples up to 100×, pairs ×2 and up.',
+  help_slots_payouts: 'Credits 1-20. Triples up to 100×, pairs ×2 and up.',
   help_mines_grid: '4×5 grid (20 tiles). Cash out before a mine.',
   help_economy_intro: 'Balance, daily, credits, and leaderboards.',
   help_credit_rate: (buy: number, sell: number) => `Buy **$${buy}** · sell **$${sell}** per credit`,
@@ -366,7 +366,7 @@ export const en: Locale = {
   blackjack_natural: 'Blackjack · **1.5x** profit',
   blackjack_perfect: 'Perfect 21',
   blackjack_bust: 'Over 21',
-  blackjack_push: 'Push — bet returned.',
+  blackjack_push: 'Push - bet returned.',
   blackjack_timeout: 'Timed out (2 minutes). The bet is gone.',
   blackjack_prompt: 'Hit or stand.',
   blackjack_goal: 'Goal: 21, or beat the dealer.',
@@ -386,7 +386,7 @@ export const en: Locale = {
     `Cashed out after **${rounds}** rounds.\nLast card: ${card}\nMultiplier: **${multi}**`,
   hilo_timeout_cash: 'Timed out. Auto cash-out.',
   hilo_timeout_loss: (bet: number) => `Bet **$${bet.toLocaleString()}** is gone.`,
-  hilo_no_direction: "That direction has no winning card — pick the other one.",
+  hilo_no_direction: "That direction has no winning card - pick the other one.",
 
   crash_title: 'Crash',
   crash_prompt: 'Click **Cash out** before it drops.',
@@ -402,7 +402,7 @@ export const en: Locale = {
   poker_timeout: (bet: number) => `Timed out (3 minutes).\nBet **$${bet.toLocaleString()}** is gone.`,
   poker_raise_broke: (need: number) => `Not enough cash to raise. You need **$${need.toLocaleString()}**.`,
   poker_fold: 'Fold',
-  poker_push: 'Push — bet returned.',
+  poker_push: 'Push - bet returned.',
   poker_your_hand: 'Your hand',
   poker_table: 'Board',
   poker_pot: 'Pot',
@@ -412,7 +412,7 @@ export const en: Locale = {
   roulette_title: 'Roulette',
   roulette_spinning: 'The wheel is spinning.',
   roulette_need_number_title: 'Missing number',
-  roulette_need_number: 'Pick a number (1–36) when betting on a straight-up number.',
+  roulette_need_number: 'Pick a number (1-36) when betting on a straight-up number.',
   roulette_hit: (multi: number) => `Hit · **${multi}x**`,
   roulette_miss: 'Not this time.',
   roulette_your_bet: 'Your bet',
@@ -447,7 +447,7 @@ export const en: Locale = {
   zdrapka_miss: 'No three matching symbols.',
   zdrapka_triple: (sym: string, multi: number) => `Three ${sym} · **${multi}x**`,
 
-  war_tie_extra: 'Tie — going to war.',
+  war_tie_extra: 'Tie - going to war.',
   war_cant_match: "You can't afford to double the stake. War lost.",
 
   vote_stats: 'Stats',
@@ -456,11 +456,11 @@ export const en: Locale = {
   vote_rate: 'Rate the bot',
   vote_footer: 'Voting helps the bot grow.',
 
-  top_money: 'Top — cash',
-  top_level: 'Top — level',
-  top_games: 'Top — games played',
-  top_wins: 'Top — wins',
-  top_streak: 'Top — daily streak',
+  top_money: 'Top - cash',
+  top_level: 'Top - level',
+  top_games: 'Top - games played',
+  top_wins: 'Top - wins',
+  top_streak: 'Top - daily streak',
   top_money_desc: 'Ranked by balance.',
   top_level_desc: 'Ranked by level and XP.',
   top_games_desc: 'Ranked by games played.',
@@ -473,7 +473,7 @@ export const en: Locale = {
   ranking_list: 'Top players',
   unknown_user: 'Unknown',
 
-  ach_title: (name: string) => `Achievements — ${name}`,
+  ach_title: (name: string) => `Achievements - ${name}`,
   ach_progress: (have: number, total: number, pct: number) =>
     `Progress: ${have}/${total} (${pct}%)`,
   ach_footer: 'Play to unlock achievements. Rewards are paid once, on unlock.',
@@ -490,15 +490,15 @@ export const en: Locale = {
     `Thanks. Report **#${id}** has been saved.`,
   report_rate: (mins: string) =>
     `You can send another report in **${mins} min**.`,
-  report_short: 'That description is too short — write at least 10 characters.',
+  report_short: 'That description is too short - write at least 10 characters.',
   report_long: 'The description can be at most 1000 characters.',
   report_self: "You can't report yourself.",
   report_bot: "You can't report a bot.",
-  report_desc: 'Pick a report type — a window will open where you describe the issue.',
+  report_desc: 'Pick a report type - a window will open where you describe the issue.',
   report_placeholder: 'Pick a report type…',
   report_about_label: 'About player',
-  report_type_bug: "Bug — something in the bot doesn't work",
-  report_type_abuse: 'Abuse — a player’s behaviour',
+  report_type_bug: "Bug - something in the bot doesn't work",
+  report_type_abuse: 'Abuse - a player’s behaviour',
   report_type_other: 'Other',
   report_modal_title: 'New report',
   report_modal_label: 'Describe the issue',
@@ -529,7 +529,7 @@ export const en: Locale = {
   guild_settings_saved_clear: 'Games and economy work in every channel again.',
   guild_settings_saved_duels_on: 'Duels are now enabled on this server.',
   guild_settings_saved_duels_off: 'Duels are now disabled on this server.',
-  guild_settings_already_set: 'That setting was already active — nothing changed.',
+  guild_settings_already_set: 'That setting was already active - nothing changed.',
 
   duel_guild_disabled_title: 'Duels disabled',
   duel_guild_disabled: 'A server admin turned off duels on this server.',

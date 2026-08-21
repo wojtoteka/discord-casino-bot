@@ -44,7 +44,7 @@ function normalizeTarget(raw: number): number {
 }
 
 /**
- * Slash sends a real multiplier (1.10–100).
+ * Slash sends a real multiplier (1.10-100).
  * play_again extra is hundredths (`200` = 2.00x) so `parseInt` / customId stay
  * free of dots (`1.50` would become `1` via parseInt).
  */
@@ -86,8 +86,8 @@ function rollMultiplier(): number {
 export default {
   data: new SlashCommandBuilder()
     .setName('limbo')
-    .setDescription('🚀 Limbo — ustaw mnożnik. Wylosowany wynik musi go przebić.')
-    .setDescriptionLocalizations(slashLocales('🚀 Limbo — set a target multiplier. The roll must beat it'))
+    .setDescription('🚀 Limbo - ustaw mnożnik. Wylosowany wynik musi go przebić.')
+    .setDescriptionLocalizations(slashLocales('🚀 Limbo - set a target multiplier. The roll must beat it'))
     .addIntegerOption(option =>
       option
         .setName('zakład')
@@ -101,8 +101,8 @@ export default {
       option
         .setName('cel')
         .setNameLocalizations(slashNameLocales('target'))
-        .setDescription(`Mnożnik docelowy (${MIN_TARGET.toFixed(2)}–${MAX_TARGET}, domyślnie ${DEFAULT_TARGET.toFixed(2)})`)
-        .setDescriptionLocalizations(slashLocales(`Target multiplier (${MIN_TARGET.toFixed(2)}–${MAX_TARGET}, default ${DEFAULT_TARGET.toFixed(2)})`))
+        .setDescription(`Mnożnik docelowy (${MIN_TARGET.toFixed(2)}-${MAX_TARGET}, domyślnie ${DEFAULT_TARGET.toFixed(2)})`)
+        .setDescriptionLocalizations(slashLocales(`Target multiplier (${MIN_TARGET.toFixed(2)}-${MAX_TARGET}, default ${DEFAULT_TARGET.toFixed(2)})`))
         .setRequired(false)
         .setMinValue(MIN_TARGET)
         .setMaxValue(MAX_TARGET),

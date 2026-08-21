@@ -25,7 +25,7 @@ import { EmbedHelper, GameHelper } from './helpers';
 import { withUserLocks } from './moneyLock';
 
 /**
- * Custom IDs (wiring / router — collector handles these live):
+ * Custom IDs (wiring / router - collector handles these live):
  *
  *   duel:accept:<challengeId>:<owner=opponentId>:<ts>
  *   duel:decline:<challengeId>:<owner=opponentId>:<ts>
@@ -422,10 +422,10 @@ function duelResultEmbed(params: {
 
   const extra: string[] = [];
   if (params.winnerAchievements.length > 0) {
-    extra.push(`${params.winnerName} — ${formatAchievementNamesInline(params.winnerAchievements)}`);
+    extra.push(`${params.winnerName} - ${formatAchievementNamesInline(params.winnerAchievements)}`);
   }
   if (params.loserAchievements.length > 0) {
-    extra.push(`${params.loserName} — ${formatAchievementNamesInline(params.loserAchievements)}`);
+    extra.push(`${params.loserName} - ${formatAchievementNamesInline(params.loserAchievements)}`);
   }
   if (extra.length > 0) {
     lines.push('', asQuote(extra.join('\n')));

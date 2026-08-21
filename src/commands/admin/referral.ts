@@ -88,8 +88,8 @@ export default {
         embeds: [EmbedHelper.infoEmbed(
           '🔗 Polecenie',
           `**Użytkownik:** ${label}\n**ID:** \`${target.id}\`\n` +
-          `**Kod:** \`${user.referral_code || '—'}\`\n` +
-          `**Polecony przez:** ${user.referred_by ? `\`${user.referred_by}\`` : '—'}\n` +
+          `**Kod:** \`${user.referral_code || '-'}\`\n` +
+          `**Polecony przez:** ${user.referred_by ? `\`${user.referred_by}\`` : '-'}\n` +
           `**Liczba poleconych:** ${count}\n\n**ID poleconych (max 20):**\n${list}`,
         )],
         flags: 64,

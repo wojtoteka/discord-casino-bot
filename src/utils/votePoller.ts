@@ -5,9 +5,9 @@ const POLL_INTERVAL_MS = 5 * 60 * 1000; // every 5 minutes
 const TOPGG_API = 'https://top.gg/api';
 
 export function startVotePoller(client: CasinoBot): void {
-  // Webhook is the primary mechanism – skip polling when it's configured
+  // Webhook is the primary mechanism - skip polling when it's configured
   if (process.env.TOPGG_WEBHOOK_AUTH) {
-    console.log('[VOTE] Webhook aktywny – polling wyłączony.');
+    console.log('[VOTE] Webhook aktywny - polling wyłączony.');
     return;
   }
 
@@ -15,13 +15,13 @@ export function startVotePoller(client: CasinoBot): void {
   const botId = process.env.TOPGG_BOT_ID || '';
 
   if (!token) {
-    console.warn('[VOTE] TOPGG_API_TOKEN nie ustawiony – polling nieaktywny.');
+    console.warn('[VOTE] TOPGG_API_TOKEN nie ustawiony - polling nieaktywny.');
     console.warn('[VOTE] Utwórz Legacy API Token na top.gg i ustaw TOPGG_API_TOKEN w .env');
     return;
   }
 
   if (!botId) {
-    console.warn('[VOTE] TOPGG_BOT_ID nie ustawiony – polling nieaktywny.');
+    console.warn('[VOTE] TOPGG_BOT_ID nie ustawiony - polling nieaktywny.');
     return;
   }
 
@@ -37,12 +37,12 @@ export function startVotePoller(client: CasinoBot): void {
     }
 
     if (res.status === 401 || res.status === 403) {
-      console.error('[VOTE] Nieprawidłowy TOPGG_API_TOKEN (HTTP ' + res.status + ') – polling zatrzymany.');
+      console.error('[VOTE] Nieprawidłowy TOPGG_API_TOKEN (HTTP ' + res.status + ') - polling zatrzymany.');
       return;
     }
 
     if (res.status === 429) {
-      console.warn('[VOTE] Rate limit top.gg – pominięto tę rundę.');
+      console.warn('[VOTE] Rate limit top.gg - pominięto tę rundę.');
       return;
     }
 
@@ -65,7 +65,7 @@ export function startVotePoller(client: CasinoBot): void {
       if (lastVote && Date.now() - lastVote < cooldownMs) continue;
 
       await client.db.recordVote(userId);
-      console.log(`[VOTE] ${userId} zagłosował – nagroda $1,000 przyznana.`);
+      console.log(`[VOTE] ${userId} zagłosował - nagroda $1,000 przyznana.`);
 
       // Notify user via DM
       try {
@@ -82,7 +82,7 @@ export function startVotePoller(client: CasinoBot): void {
           .setTimestamp();
         await user.send({ embeds: [embed] });
       } catch {
-        // DMs disabled – skip silently
+        // DMs disabled - skip silently
       }
     }
   };

@@ -11,7 +11,7 @@ export default {
     .setName('polecenie')
     .setNameLocalizations(slashNameLocales('referral'))
     .setDescription('🤝 System poleceń - zaproś znajomych i zdobądź $2,000!')
-    .setDescriptionLocalizations(slashLocales('🤝 Referral system — invite a friend and you both get a bonus'))
+    .setDescriptionLocalizations(slashLocales('🤝 Referral system - invite a friend and you both get a bonus'))
     .addStringOption(option =>
       option
         .setName('kod')

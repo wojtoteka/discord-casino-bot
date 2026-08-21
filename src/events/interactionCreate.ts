@@ -23,7 +23,7 @@ const FROZEN_COMMANDS = new Set([
 ]);
 
 function formatLimitUntil(ms: number): string {
-  if (!ms || !Number.isFinite(ms)) return '—';
+  if (!ms || !Number.isFinite(ms)) return '-';
   return `<t:${Math.floor(ms / 1000)}:R>`;
 }
 
@@ -122,7 +122,7 @@ async function handleComponentInteraction(
       } catch {}
     }
 
-    // play_again:<game>:<bet>[:extra]:<owner>:<ts> — re-run a game inline
+    // play_again:<game>:<bet>[:extra]:<owner>:<ts> - re-run a game inline
     if (customId.startsWith('play_again:')) {
       const parts = customId.split(':');
       const game  = parts[1];
@@ -155,7 +155,7 @@ async function handleComponentInteraction(
       return;
     }
 
-    // nav:<target>:<targetUserId>:<owner>:<ts> — navigation shortcut
+    // nav:<target>:<targetUserId>:<owner>:<ts> - navigation shortcut
     if (customId.startsWith('nav:')) {
       const parts    = customId.split(':');
       const target   = parts[1];
@@ -186,7 +186,7 @@ async function handleComponentInteraction(
       return;
     }
 
-    // gset:channel|clear|duels|refresh:<value>:<owner>:<ts> — /ustawienia-serwera panel
+    // gset:channel|clear|duels|refresh:<value>:<owner>:<ts> - /ustawienia-serwera panel
     if (customId.startsWith('gset:')) {
       const parts  = customId.split(':');
       const action = parts[1];
@@ -206,7 +206,7 @@ async function handleComponentInteraction(
       return;
     }
 
-    // mines:<action>:<sessionId>[:pos]:<owner> — mines game tile reveal / cashout
+    // mines:<action>:<sessionId>[:pos]:<owner> - mines game tile reveal / cashout
     if (customId.startsWith('mines:')) {
       const parts = customId.split(':');
       const action    = parts[1];
@@ -255,7 +255,7 @@ async function handleComponentInteraction(
       return;
     }
 
-    // top_menu:<owner>:<ts> — /top category picker
+    // top_menu:<owner>:<ts> - /top category picker
     if (customId.startsWith('top_menu') && interaction.isStringSelectMenu()) {
       const parts = customId.split(':');
       const owner = parts[1];
@@ -271,7 +271,7 @@ async function handleComponentInteraction(
       return;
     }
 
-    // report_type:<reportedId|->:<owner>:<ts> — /zgłoszenie type picker → modal
+    // report_type:<reportedId|->:<owner>:<ts> - /zgłoszenie type picker → modal
     if (customId.startsWith('report_type:') && interaction.isStringSelectMenu()) {
       const parts = customId.split(':');
       const reportedId = parts[1];
@@ -283,7 +283,7 @@ async function handleComponentInteraction(
       return;
     }
 
-    // help_menu:<owner>:<ts> — /pomoc select menu
+    // help_menu:<owner>:<ts> - /pomoc select menu
     if (customId.startsWith('help_menu') && interaction.isStringSelectMenu()) {
       const parts = customId.split(':');
       const owner = parts[1];
@@ -636,7 +636,7 @@ async function handleNavigation(
     await interaction.reply({ content: `Unknown navigation target: ${target}`, flags: 64 });
     return;
   }
-  // Defer FIRST — before any API/DB work so Discord acknowledges immediately
+  // Defer FIRST - before any API/DB work so Discord acknowledges immediately
   try {
     await interaction.deferReply();
   } catch (err) {
@@ -693,7 +693,7 @@ async function handleMinesAction(
       try {
         payout = await client.db.cashoutMines(sessionId, interaction.user.id);
       } catch {
-        // Already cashed out or blown up — a re-press of a stale button.
+        // Already cashed out or blown up - a re-press of a stale button.
         await interaction.followUp({
           embeds: [EmbedHelper.warningEmbed(t(lang, 'mines_title'), t(lang, 'mines_settled'))],
           flags: 64,
@@ -784,7 +784,7 @@ export default {
     const client = interaction.client as CasinoBot;
 
     // Set DEBUG_INTERACTIONS=1 in .env to confirm interactions reach the gateway
-    // at all — silence here means Discord is delivering them somewhere else.
+    // at all - silence here means Discord is delivering them somewhere else.
     if (process.env.DEBUG_INTERACTIONS === '1') {
       const kind = interaction.isChatInputCommand() ? `/${interaction.commandName}`
         : interaction.isButton() ? `button:${interaction.customId}`
@@ -967,7 +967,7 @@ export default {
       try {
         await command.execute(interaction);
       } catch (error) {
-        // Silently ignore expired/already-replied interactions — these are normal race conditions
+        // Silently ignore expired/already-replied interactions - these are normal race conditions
         if (isUnknownInteractionError(error)) return;
         console.error(`[ROYALCASINO] Błąd komendy /${interaction.commandName}:`, error);
 

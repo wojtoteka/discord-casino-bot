@@ -69,7 +69,7 @@ function clip(text: string, max: number): string {
 }
 
 function relativeTime(createdAt: number): string {
-  return createdAt ? `<t:${Math.floor(createdAt / 1000)}:R>` : '—';
+  return createdAt ? `<t:${Math.floor(createdAt / 1000)}:R>` : '-';
 }
 
 function customId(action: string, state: ReportsPanelState, value: string | number = '-'): string {
@@ -84,7 +84,7 @@ function filterQuery(state: ReportsPanelState) {
 }
 
 function listLine(row: ReportRow): string {
-  const reported = row.reported_id ? `<@${row.reported_id}>` : '—';
+  const reported = row.reported_id ? `<@${row.reported_id}>` : '-';
   return [
     `${typeEmoji(row.type)} **#${row.id}** · ${typeLabel(row.type)} · ${statusLabel(row.status)} · ${relativeTime(row.created_at)}`,
     `Zgłosił: <@${row.reporter_id}> · Dotyczy: ${reported}`,
@@ -119,7 +119,7 @@ function openReportRow(
       .addOptions(rows.map(row => ({
         value: String(row.id),
         label: `#${row.id} · ${typeLabel(row.type)}`,
-        description: clip(row.description, 90) || '—',
+        description: clip(row.description, 90) || '-',
         emoji: typeEmoji(row.type),
       }))),
   );
@@ -225,7 +225,7 @@ export async function buildReportsListPayload(
 function buildReportDetailPayload(state: ReportsPanelState, report: ReportRow): PanelPayload {
   const reported = report.reported_id
     ? `<@${report.reported_id}> (\`${report.reported_id}\`)`
-    : '—';
+    : '-';
 
   const embed = new EmbedBuilder()
     .setTitle(`${typeEmoji(report.type)} Zgłoszenie #${report.id}`)
@@ -248,7 +248,7 @@ function buildReportDetailPayload(state: ReportsPanelState, report: ReportRow): 
       },
       {
         name: 'Kanał',
-        value: report.channel_id ? `<#${report.channel_id}>` : '—',
+        value: report.channel_id ? `<#${report.channel_id}>` : '-',
         inline: true,
       },
     )

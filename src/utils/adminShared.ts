@@ -95,7 +95,7 @@ export function resolveTargetId(
   }
   const id = parseDiscordId(raw);
   if (!id) {
-    return { ok: false, message: 'Nieprawidłowe ID. Wklej liczbowe Discord ID (17–20 cyfr).' };
+    return { ok: false, message: 'Nieprawidłowe ID. Wklej liczbowe Discord ID (17-20 cyfr).' };
   }
   return { ok: true, id };
 }
@@ -111,7 +111,7 @@ export function formatPlTime(value: Date | string | number | null | undefined): 
 
 export function discordTime(ms: number): string {
   const s = Math.floor(ms / 1000);
-  if (!Number.isFinite(s) || s <= 0) return '—';
+  if (!Number.isFinite(s) || s <= 0) return '-';
   return `<t:${s}:f> (<t:${s}:R>)`;
 }
 
@@ -191,7 +191,7 @@ function blockedNavRow(page: number, totalPages: number): ActionRowBuilder<Butto
 function formatGameLine(g: GameHistoryRow): string {
   const net = Number(g.win_amount) - Number(g.bet_amount);
   const netStr = `${net >= 0 ? '+' : ''}${net.toLocaleString('pl-PL')}`;
-  const when = g.played_at ? discordTime(Number(g.played_at)) : '—';
+  const when = g.played_at ? discordTime(Number(g.played_at)) : '-';
   return `• **${g.game_type}** · $${Number(g.bet_amount).toLocaleString('pl-PL')} → $${Number(g.win_amount).toLocaleString('pl-PL')} (${netStr}) · ${g.result} · ${when}`;
 }
 
@@ -240,8 +240,8 @@ export async function buildUserInfoEmbed(
   description += `💸 **Obstawione (profil):** $${Number(user.total_wagered || 0).toLocaleString('pl-PL')}\n`;
   description += `📈 **Netto (historia):** $${histStats.net.toLocaleString('pl-PL')}  ·  ROI **${roi.toFixed(1)}%** (${histStats.games} gier)\n\n`;
 
-  description += `🔗 **Kod polecenia:** \`${user.referral_code || '—'}\`\n`;
-  description += `👤 **Polecony przez:** ${user.referred_by ? `\`${user.referred_by}\`` : '—'}\n`;
+  description += `🔗 **Kod polecenia:** \`${user.referral_code || '-'}\`\n`;
+  description += `👤 **Polecony przez:** ${user.referred_by ? `\`${user.referred_by}\`` : '-'}\n`;
   description += `🌐 **Język:** ${lang}\n`;
   description += `🕒 **Konto od:** ${formatPlTime(user.created_at)}\n\n`;
   description += `${formatBlockStatus(user)}\n`;
@@ -258,7 +258,7 @@ export async function buildUserInfoEmbed(
     description += `📝 **Ostatnie notatki:**\n`;
     description += notes.map(n => {
       const body = n.note.length > 140 ? `${n.note.slice(0, 140)}…` : n.note;
-      return `• ${formatPlTime(n.created_at)} — ${body}`;
+      return `• ${formatPlTime(n.created_at)} - ${body}`;
     }).join('\n');
     description += `\n\n`;
   }

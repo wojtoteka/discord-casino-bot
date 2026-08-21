@@ -34,7 +34,7 @@ export default {
     const id = parseDiscordId(interaction.options.getString('id', true));
     if (!id) {
       await interaction.reply({
-        embeds: [EmbedHelper.errorEmbed('❌ Błąd', 'Nieprawidłowe ID. Wklej liczbowe Discord ID (17–20 cyfr).')],
+        embeds: [EmbedHelper.errorEmbed('❌ Błąd', 'Nieprawidłowe ID. Wklej liczbowe Discord ID (17-20 cyfr).')],
         flags: 64,
       });
       return;

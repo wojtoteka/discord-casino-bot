@@ -67,7 +67,7 @@ export function slashLocales(en: string): EnLocalizations {
 
 /**
  * English localizations for slash command / option / choice names. Base names stay Polish because
- * routing (`client.commands`), `play_again` and `interaction.options.get*` keys depend on them —
+ * routing (`client.commands`), `play_again` and `interaction.options.get*` keys depend on them -
  * Discord only swaps the label shown to clients with an English locale.
  */
 export function slashNameLocales(en: string): EnLocalizations {

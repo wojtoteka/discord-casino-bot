@@ -40,7 +40,7 @@ export default {
   data: new SlashCommandBuilder()
     .setName('blackjack')
     .setDescription('🃏 Zagraj w blackjacka - cel: 21 punktów!')
-    .setDescriptionLocalizations(slashLocales('🃏 Play blackjack — hit 21'))
+    .setDescriptionLocalizations(slashLocales('🃏 Play blackjack - hit 21'))
     .addIntegerOption(option =>
       option
         .setName('zakład')
@@ -211,7 +211,7 @@ export default {
               const newData = await client.db.getUser(userId);
               resultEmbed = infoGameEmbed(
                 'Blackjack',
-                'Remis — zwrot zakładu.',
+                'Remis - zwrot zakładu.',
                 { bet, result: 'Remis', balance: newData.money, details: handDetails(game) },
               );
             } else {
@@ -284,7 +284,7 @@ export default {
               const newData = await client.db.getUser(userId);
               resultEmbed = infoGameEmbed(
                 'Blackjack',
-                'Remis — zwrot zakładu.',
+                'Remis - zwrot zakładu.',
                 { bet, result: 'Remis', balance: newData.money, details: handDetails(game) },
               );
               break;

@@ -15,7 +15,7 @@ export const pl = {
   no_permission: 'Nie masz uprawnień do tej komendy.',
   error_not_your_panel_title: 'To nie Twoja wiadomość',
   error_not_your_panel:
-    'Te przyciski są podpięte do innego gracza. Użyj własnej komendy — wtedy panel będzie Twój.',
+    'Te przyciski są podpięte do innego gracza. Użyj własnej komendy - wtedy panel będzie Twój.',
   error_panel_expired_title: '⏳ Panel wygasł',
   error_panel_expired:
     'Minęło 10 minut, więc ten panel już nie działa. Użyj komendy ponownie.',
@@ -65,7 +65,7 @@ export const pl = {
   balance_new_user: (amount: number) =>
     `Witaj w RoyalCasino! Otrzymałeś **$${amount.toLocaleString()}** na start!`,
 
-  // ── Games – common ───────────────────────────────────────────
+  // ── Games - common ───────────────────────────────────────────
   bet_label:    (amount: number) => `💰 Zakład: **$${amount.toLocaleString()}**`,
   balance_info: (amount: number) => `💰 Saldo: **$${amount.toLocaleString()}**`,
   insufficient_funds_title:   '❌ Niewystarczające środki',
@@ -105,8 +105,8 @@ export const pl = {
   slots_spinning: '🎰 Kręcę bębnami...',
   slots_title:    '🎰 Slots',
   slots_jackpot:  '💎 **Jackpot**',
-  slots_triple:   (sym: string, multi: number) => `${sym}${sym}${sym} — **${multi}x** zakładu`,
-  slots_two:      'Dwie jednakowe — para (×2 i wyżej w zależności od symbolu)',
+  slots_triple:   (sym: string, multi: number) => `${sym}${sym}${sym} - **${multi}x** zakładu`,
+  slots_two:      'Dwie jednakowe - para (×2 i wyżej w zależności od symbolu)',
   slots_none:     'Brak wygranej',
   slots_win:  (amount: number, credits: number) =>
     `💰 +$${amount.toLocaleString()} | 🎟️ Pozostało: **${credits}**`,
@@ -148,7 +148,7 @@ export const pl = {
 
   // ── Quests ───────────────────────────────────────────────────
   quests_title:     '🎯 Dzienne questy',
-  quests_none:      '*Brak aktywnych questów — wróć jutro.*',
+  quests_none:      '*Brak aktywnych questów - wróć jutro.*',
   quests_progress:  (done: number, total: number) => `${done} / ${total}`,
   quests_completed: '✅ **Ukończono**',
   quests_reward:    (money: number, xp: number) =>
@@ -161,9 +161,9 @@ export const pl = {
   // ── Mines ────────────────────────────────────────────────────
   mines_title:        '💣 Miny',
   mines_in_progress:  'Masz już aktywną grę Miny.',
-  mines_select_mines: '⚙️ Wybierz liczbę min (1–15):',
+  mines_select_mines: '⚙️ Wybierz liczbę min (1-15):',
   mines_game_start:   (mines: number, bet: number) =>
-    `Zakład: **$${bet.toLocaleString()}** · Min: **${mines}**\nOdkrywaj kafelki — wypłać przed trafieniem miny.`,
+    `Zakład: **$${bet.toLocaleString()}** · Min: **${mines}**\nOdkrywaj kafelki - wypłać przed trafieniem miny.`,
   mines_safe:         '✅ Bezpieczne',
   mines_hit:          '💥 Mina',
   mines_cashout_btn:  '💸 Wypłać',
@@ -220,7 +220,7 @@ export const pl = {
   duel_declined_content:      'Wyzwanie odrzucone.',
   duel_declined_desc:         'Wyzwanie zostało odrzucone. Nic nie zostało pobrane.',
   duel_rolling_content:       'Losowanie zwycięzcy…',
-  duel_rolling_desc:          'Losowanie zwycięzcy — uczciwe 50/50, bez prowizji kasyna.',
+  duel_rolling_desc:          'Losowanie zwycięzcy - uczciwe 50/50, bez prowizji kasyna.',
   duel_already_done_title:    'Już zakończone',
   duel_already_done:          'To wyzwanie jest już rozstrzygnięte.',
   duel_too_late_title:        'Za późno',
@@ -231,7 +231,7 @@ export const pl = {
   duel_already_accepted:      'To wyzwanie jest już obsłużone.',
   duel_no_funds_content:      'Brak środków.',
   duel_no_funds:              (lines: string) =>
-    `Nie udało się przyjąć pojedynku — brak kasy.\n${lines}\n\nNic nie zostało pobrane.`,
+    `Nie udało się przyjąć pojedynku - brak kasy.\n${lines}\n\nNic nie zostało pobrane.`,
   duel_short_line:            (user: string, money: number, bet: number) =>
     `${user} ma **$${money.toLocaleString()}**, potrzeba **$${bet.toLocaleString()}**.`,
   duel_win_sentence:          (winner: string, pool: string) =>
@@ -273,9 +273,9 @@ export const pl = {
   limbo_checking:  'Sprawdzam wynik...',
   limbo_target:    'Cel',
   limbo_payout:    (amount: string) => `Wypłata ${amount} (stawka × cel)`,
-  limbo_miss:      'Cel nieosiągnięty — stawka przepadła.',
-  limbo_hit:       (rolled: string, target: string) => `Trafione — ${rolled} przebija ${target}`,
-  limbo_miss_result: (rolled: string, target: string) => `Pudło — ${rolled} nie przebija ${target}`,
+  limbo_miss:      'Cel nieosiągnięty - stawka przepadła.',
+  limbo_hit:       (rolled: string, target: string) => `Trafione - ${rolled} przebija ${target}`,
+  limbo_miss_result: (rolled: string, target: string) => `Pudło - ${rolled} nie przebija ${target}`,
 
   play_again_missing: (game: string) => `Użyj \`/${game}\`, aby zagrać ponownie.`,
   game_in_progress_title: 'Gra w toku',
@@ -316,7 +316,7 @@ export const pl = {
   referral_dm: (name: string, amount: number) =>
     `**${name}** użył Twojego kodu polecenia.\nOtrzymałeś **$${amount.toLocaleString()}**.`,
   referral_intro: (amount: number) =>
-    `Zaproś znajomych — oboje dostajecie **$${amount.toLocaleString()}**.`,
+    `Zaproś znajomych - oboje dostajecie **$${amount.toLocaleString()}**.`,
   referral_your_code: 'Twój kod polecenia',
   referral_stats: 'Statystyki',
   referral_count: (n: number) => `Polecono osób: **${n}**`,
@@ -352,7 +352,7 @@ export const pl = {
   profile_age: 'Wiek konta',
   profile_age_days: (n: number) => `${n} dni`,
   profile_age_new: 'Nowe konto',
-  profile_no_achievements: 'Brak osiągnięć — zagraj, żeby je zdobywać.',
+  profile_no_achievements: 'Brak osiągnięć - zagraj, żeby je zdobywać.',
   profile_more: (n: number) => `+${n} więcej…`,
   profile_error: 'Nie udało się pobrać profilu.',
 
@@ -366,7 +366,7 @@ export const pl = {
   help_placeholder: 'Wybierz kategorię...',
   help_games_intro: 'Skrót gier. Każda ma własny minimalny zakład.',
   help_kolo_payouts: '0× · 0.5× · 1× · 2× · 5× · 10×',
-  help_slots_payouts: 'Kredyty 1–20. Trójki do 100×, pary ×2 i wyżej.',
+  help_slots_payouts: 'Kredyty 1-20. Trójki do 100×, pary ×2 i wyżej.',
   help_mines_grid: 'Siatka 4×5 (20 pól). Wypłać przed miną.',
   help_economy_intro: 'Saldo, daily, kredyty i rankingi.',
   help_credit_rate: (buy: number, sell: number) => `Zakup **$${buy}** · sprzedaż **$${sell}** za kredyt`,
@@ -382,7 +382,7 @@ export const pl = {
   blackjack_natural: 'Blackjack · **1.5x** zysku',
   blackjack_perfect: 'Perfekcyjne 21',
   blackjack_bust: 'Powyżej 21',
-  blackjack_push: 'Remis — zwrot zakładu.',
+  blackjack_push: 'Remis - zwrot zakładu.',
   blackjack_timeout: 'Czas minął (2 minuty). Zakład przepadł.',
   blackjack_prompt: 'Dobierz albo pasuj.',
   blackjack_goal: 'Cel: 21 punktów albo więcej niż krupier.',
@@ -402,7 +402,7 @@ export const pl = {
     `Wypłacono po **${rounds}** rundach.\nOstatnia karta: ${card}\nMnożnik: **${multi}**`,
   hilo_timeout_cash: 'Czas minął. Auto-wypłata.',
   hilo_timeout_loss: (bet: number) => `Zakład **$${bet.toLocaleString()}** przepadł.`,
-  hilo_no_direction: 'Ten kierunek nie ma wygrywającej karty — wybierz drugi.',
+  hilo_no_direction: 'Ten kierunek nie ma wygrywającej karty - wybierz drugi.',
 
   crash_title: 'Crash',
   crash_prompt: 'Kliknij **Wypłać** zanim spadnie.',
@@ -418,7 +418,7 @@ export const pl = {
   poker_timeout: (bet: number) => `Czas minął (3 minuty).\nZakład **$${bet.toLocaleString()}** przepadł.`,
   poker_raise_broke: (need: number) => `Brak środków na podbicie. Potrzebujesz **$${need.toLocaleString()}**.`,
   poker_fold: 'Pas',
-  poker_push: 'Remis — zakład zwrócony.',
+  poker_push: 'Remis - zakład zwrócony.',
   poker_your_hand: 'Twoja ręka',
   poker_table: 'Stół',
   poker_pot: 'Pula',
@@ -428,7 +428,7 @@ export const pl = {
   roulette_title: 'Ruletka',
   roulette_spinning: 'Koło się kręci.',
   roulette_need_number_title: 'Brak liczby',
-  roulette_need_number: 'Podaj liczbę (1–36), gdy obstawiasz konkretną liczbę.',
+  roulette_need_number: 'Podaj liczbę (1-36), gdy obstawiasz konkretną liczbę.',
   roulette_hit: (multi: number) => `Trafione · **${multi}x**`,
   roulette_miss: 'Nie tym razem.',
   roulette_your_bet: 'Twój zakład',
@@ -463,7 +463,7 @@ export const pl = {
   zdrapka_miss: 'Brak trzech takich samych symboli.',
   zdrapka_triple: (sym: string, multi: number) => `Trzy ${sym} · **${multi}x**`,
 
-  war_tie_extra: 'Runda zakończona remisem — wojna.',
+  war_tie_extra: 'Runda zakończona remisem - wojna.',
   war_cant_match: 'Nie stać Cię na podwojenie stawki. Wojna przegrana.',
 
   vote_stats: 'Statystyki',
@@ -472,11 +472,11 @@ export const pl = {
   vote_rate: 'Oceń bota',
   vote_footer: 'Głosowanie pomaga w rozwoju bota.',
 
-  top_money: 'Top — pieniądze',
-  top_level: 'Top — poziom',
-  top_games: 'Top — liczba gier',
-  top_wins: 'Top — wygrane',
-  top_streak: 'Top — seria dzienna',
+  top_money: 'Top - pieniądze',
+  top_level: 'Top - poziom',
+  top_games: 'Top - liczba gier',
+  top_wins: 'Top - wygrane',
+  top_streak: 'Top - seria dzienna',
   top_money_desc: 'Ranking według salda.',
   top_level_desc: 'Ranking według poziomu i XP.',
   top_games_desc: 'Ranking według liczby gier.',
@@ -489,7 +489,7 @@ export const pl = {
   ranking_list: 'Top gracze',
   unknown_user: 'Nieznany',
 
-  ach_title: (name: string) => `Osiągnięcia — ${name}`,
+  ach_title: (name: string) => `Osiągnięcia - ${name}`,
   ach_progress: (have: number, total: number, pct: number) =>
     `Postęp: ${have}/${total} (${pct}%)`,
   ach_footer: 'Graj, aby odblokowywać osiągnięcia. Nagrody wypłacane są raz, przy odblokowaniu.',
@@ -506,15 +506,15 @@ export const pl = {
     `Dziękujemy. Zgłoszenie **#${id}** zostało zapisane.`,
   report_rate: (mins: string) =>
     `Możesz wysłać kolejne zgłoszenie za **${mins} min**.`,
-  report_short: 'Opis jest za krótki — napisz przynajmniej 10 znaków.',
+  report_short: 'Opis jest za krótki - napisz przynajmniej 10 znaków.',
   report_long: 'Opis może mieć maksymalnie 1000 znaków.',
   report_self: 'Nie możesz zgłosić samego siebie.',
   report_bot: 'Nie możesz zgłosić bota.',
-  report_desc: 'Wybierz rodzaj zgłoszenia — otworzy się okno, w którym opiszesz problem.',
+  report_desc: 'Wybierz rodzaj zgłoszenia - otworzy się okno, w którym opiszesz problem.',
   report_placeholder: 'Wybierz rodzaj zgłoszenia…',
   report_about_label: 'Dotyczy gracza',
-  report_type_bug: 'Bug — coś w bocie nie działa',
-  report_type_abuse: 'Nadużycie — zachowanie gracza',
+  report_type_bug: 'Bug - coś w bocie nie działa',
+  report_type_abuse: 'Nadużycie - zachowanie gracza',
   report_type_other: 'Inne',
   report_modal_title: 'Nowe zgłoszenie',
   report_modal_label: 'Opisz problem',
@@ -545,7 +545,7 @@ export const pl = {
   guild_settings_saved_clear: 'Gry i ekonomia działają znowu na każdym kanale.',
   guild_settings_saved_duels_on: 'Pojedynki są teraz włączone na tym serwerze.',
   guild_settings_saved_duels_off: 'Pojedynki są teraz wyłączone na tym serwerze.',
-  guild_settings_already_set: 'To ustawienie już było aktywne — nic nie zmieniono.',
+  guild_settings_already_set: 'To ustawienie już było aktywne - nic nie zmieniono.',
 
   duel_guild_disabled_title: 'Pojedynki wyłączone',
   duel_guild_disabled: 'Administrator serwera wyłączył pojedynki na tym serwerze.',

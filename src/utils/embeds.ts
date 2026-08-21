@@ -50,7 +50,7 @@ function emphasizeValue(value: string): string {
   return `**${inner}**`;
 }
 
-/** Scannable `Label: **value**` line — not a log dump. */
+/** Scannable `Label: **value**` line - not a log dump. */
 export function listLine(label: string, value: string): string {
   return `${label}: ${emphasizeValue(value)}`;
 }

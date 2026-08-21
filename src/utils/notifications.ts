@@ -171,7 +171,7 @@ export async function sendWelcomeDM(client: Client, userId: string): Promise<voi
         `${listLine('Blackjack', '`/blackjack`')}\n` +
         `${listLine('Crash', '`/crash`')}\n` +
         `${listLine('Daily', '`/daily`')}\n` +
-        `${listLine('Polecenie', '`/polecenie` — +$2,000')}\n\n` +
+        `${listLine('Polecenie', '`/polecenie` - +$2,000')}\n\n` +
         asQuote('Pełna lista komend: `/pomoc`.'),
       )
       .setFooter({ text: BRAND.footerText })

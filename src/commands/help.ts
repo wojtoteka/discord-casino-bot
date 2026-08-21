@@ -29,7 +29,7 @@ export function createGamesEmbed(lang: Lang = 'pl'): EmbedBuilder {
       `${t(lang, 'help_games_intro')}\n\n` +
       `${listLine('Blackjack `/blackjack`', '21 · 2× · BJ 2.5×')}\n` +
       `${listLine('Poker `/poker`', 'Hold\'em vs krupier · min. $500')}\n` +
-      `${listLine('Ruletka `/ruletka`', '2×–35×')}\n` +
+      `${listLine('Ruletka `/ruletka`', '2×-35×')}\n` +
       `${listLine('Slots `/slots`', t(lang, 'help_slots_payouts'))}\n` +
       `${listLine('Coinflip `/coinflip`', '2×')}\n` +
       `${listLine('Dice `/dice`', '5×')}\n` +
@@ -37,7 +37,7 @@ export function createGamesEmbed(lang: Lang = 'pl'): EmbedBuilder {
       `${listLine('War `/war`', '2× · wojna 3×')}\n` +
       `${listLine('Hi-Lo `/hilo`', t(lang, 'hilo_prompt'))}\n` +
       `${listLine('Miny `/miny`', t(lang, 'help_mines_grid'))}\n` +
-      `${listLine('Zdrapka `/zdrapka`', '2×–25×')}\n` +
+      `${listLine('Zdrapka `/zdrapka`', '2×-25×')}\n` +
       `${listLine('Koło `/kolo`', t(lang, 'help_kolo_payouts'))}\n` +
       `${listLine('Keno `/keno`', 'do 500×')}\n` +
       `${listLine('Pojedynek `/pojedynek`', '50/50')}\n` +

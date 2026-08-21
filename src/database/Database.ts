@@ -66,7 +66,7 @@ export interface UserData {
   is_frozen?: boolean;
   /** 0 = no personal cap. Enforced in addition to global MAX_BET. */
   max_bet?: number;
-  /** Unix ms; 0 = no expiry (should not happen — limits are always timed). */
+  /** Unix ms; 0 = no expiry (should not happen - limits are always timed). */
   max_bet_until?: number;
 }
 
@@ -219,7 +219,7 @@ export interface GameEvents {
   adminAlert: AdminAlertPayload;
 }
 
-/** Simple in-memory read cache for user rows — invalidated on every write. */
+/** Simple in-memory read cache for user rows - invalidated on every write. */
 interface CacheEntry { data: UserData; expiresAt: number }
 
 /** Per-user debounce for checkAchievements: stores the last time we ran it. */
@@ -767,7 +767,7 @@ export class Database extends EventEmitter {
 
   /**
    * MariaDB named lock around a user's balance write.
-   * Advisory only — still requires atomic WHERE money >= ? in the UPDATE.
+   * Advisory only - still requires atomic WHERE money >= ? in the UPDATE.
    * Falls through if GET_LOCK is unavailable.
    */
   private async withNamedUserLock<T>(userId: string, fn: (conn: mysql.PoolConnection) => Promise<T>): Promise<T> {
@@ -1190,7 +1190,7 @@ export class Database extends EventEmitter {
 
         // Daily resets at 00:00 Europe/Warsaw (calendar day based, not rolling 24h)
         if (lastDaily > 0 && lastDailyKey === todayKey) {
-          // Already claimed today — self-heal state in case an earlier claim
+          // Already claimed today - self-heal state in case an earlier claim
           // (made before this fix) missed last_bonus or the daily quest.
           if (!user.last_bonus || user.last_bonus < lastDaily) {
             await this.pool.execute(
@@ -1471,7 +1471,7 @@ export class Database extends EventEmitter {
     }
   }
 
-  /** Close stale mines sessions (active but older than 2h — player abandoned) and refund bet */
+  /** Close stale mines sessions (active but older than 2h - player abandoned) and refund bet */
   public async cleanupOrphanedMines(): Promise<number> {
     const staleThreshold = Date.now() - 2 * 60 * 60 * 1000;
     try {
@@ -2536,7 +2536,7 @@ export class Database extends EventEmitter {
         [sinceMs],
       );
       return (rows as any[]).map(r => ({
-        game_type: String(r.game_type || '—'),
+        game_type: String(r.game_type || '-'),
         games: Number(r.games) || 0,
         wagered: Number(r.wagered) || 0,
         houseNet: Number(r.house_net) || 0,
@@ -2692,7 +2692,7 @@ export class Database extends EventEmitter {
       this.emit('adminAlert', {
         userId,
         kind: kinds.join('+'),
-        title: watched ? '👁️ Obserwowany gracz — aktywność' : '⚠️ Podejrzana aktywność',
+        title: watched ? '👁️ Obserwowany gracz - aktywność' : '⚠️ Podejrzana aktywność',
         description: [
           `**Użytkownik:** \`${userId}\``,
           watched ? '**Watchlista:** tak' : null,

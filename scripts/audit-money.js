@@ -1,4 +1,4 @@
-// Audyt ekonomii — TYLKO ODCZYT, nie modyfikuje niczego.
+// Audyt ekonomii - TYLKO ODCZYT, nie modyfikuje niczego.
 // Uruchom: node scripts/audit-money.js
 require('dotenv').config();
 const mysql = require('mysql2/promise');
@@ -19,7 +19,7 @@ const fmt = (n) => Number(n ?? 0).toLocaleString('pl-PL');
   const q = async (sql, params = []) => (await db.query(sql, params))[0];
 
   // ── 1. TOP 10 + bilans: skąd wzięły się pieniądze ────────────────
-  console.log('\n═══ 1. TOP 10 — saldo vs. historia gier ═══\n');
+  console.log('\n═══ 1. TOP 10 - saldo vs. historia gier ═══\n');
   const top = await q(`
     SELECT u.user_id, u.money, u.total_games, u.total_wagered, u.biggest_win,
            u.level, u.daily_streak, u.created_at,
@@ -49,7 +49,7 @@ const fmt = (n) => Number(n ?? 0).toLocaleString('pl-PL');
   }
 
   // ── 2. Miny: wypłaty vs. faktyczne sesje (główny exploit) ────────
-  console.log('\n═══ 2. MINY — liczba wypłat vs. liczba sesji ═══');
+  console.log('\n═══ 2. MINY - liczba wypłat vs. liczba sesji ═══');
   console.log('(wypłat > sesji  =  ta sama sesja wypłacona wielokrotnie)\n');
   const mines = await q(`
     SELECT g.user_id,
@@ -85,8 +85,8 @@ const fmt = (n) => Number(n ?? 0).toLocaleString('pl-PL');
     console.log(`     od ${new Date(Number(d.pierwsza)).toLocaleString('pl-PL')} do ${new Date(Number(d.ostatnia)).toLocaleString('pl-PL')}`);
   }
 
-  // ── 4. Tempo gry — bot/makro ─────────────────────────────────────
-  console.log('\n═══ 4. Najszybsze serie gier (gier/min — wykrywa makro) ═══\n');
+  // ── 4. Tempo gry - bot/makro ─────────────────────────────────────
+  console.log('\n═══ 4. Najszybsze serie gier (gier/min - wykrywa makro) ═══\n');
   const speed = await q(`
     SELECT user_id,
            COUNT(*) AS gier,
@@ -98,7 +98,7 @@ const fmt = (n) => Number(n ?? 0).toLocaleString('pl-PL');
   for (const s of speed) console.log(`  ${s.user_id}: ${s.gier_na_min} gier/min (${s.gier} gier)`);
 
   // ── 5. Oś czasu skoku salda dla TOP 3 ───────────────────────────
-  console.log('\n═══ 5. TOP 3 — 15 największych pojedynczych wygranych ═══\n');
+  console.log('\n═══ 5. TOP 3 - 15 największych pojedynczych wygranych ═══\n');
   for (const u of top.slice(0, 3)) {
     console.log(`── ${u.user_id} ──`);
     const games = await q(
@@ -112,7 +112,7 @@ const fmt = (n) => Number(n ?? 0).toLocaleString('pl-PL');
   }
 
   // ── 5b. KTÓRA GRA: rozbicie zysku po grach dla TOP 3 ────────────
-  console.log('\n═══ 5b. TOP 10 — rozbicie po grach (win rate + netto) ═══\n');
+  console.log('\n═══ 5b. TOP 10 - rozbicie po grach (win rate + netto) ═══\n');
   for (const u of top) {
     console.log(`── ${u.user_id} ──`);
     const byGame = await q(`
@@ -133,7 +133,7 @@ const fmt = (n) => Number(n ?? 0).toLocaleString('pl-PL');
 
   // ── 5c. Wypłaty przekraczające realny mnożnik gry ───────────────
   console.log('\n═══ 5c. Wygrane z niemożliwym mnożnikiem ═══');
-  console.log('(coinflip max x2, dice x5, war x3, blackjack x2.5, slots — sprawdź osobno)\n');
+  console.log('(coinflip max x2, dice x5, war x3, blackjack x2.5, slots - sprawdź osobno)\n');
   const impossible = await q(`
     SELECT user_id, game_type, bet_amount, win_amount, played_at,
            win_amount / bet_amount AS mnoznik
@@ -148,13 +148,13 @@ const fmt = (n) => Number(n ?? 0).toLocaleString('pl-PL');
     )
     ORDER BY win_amount DESC LIMIT 25
   `);
-  if (!impossible.length) console.log('  (brak — mnożniki mieszczą się w normie, problem leży w tym ILE razy wygrywają)');
+  if (!impossible.length) console.log('  (brak - mnożniki mieszczą się w normie, problem leży w tym ILE razy wygrywają)');
   for (const g of impossible) {
     console.log(`  ${g.user_id} | ${g.game_type} | $${fmt(g.bet_amount)} → $${fmt(g.win_amount)} (x${Number(g.mnoznik).toFixed(2)}) | ${new Date(Number(g.played_at)).toLocaleString('pl-PL')}`);
   }
 
   // ── 5d. Najdłuższe serie zwycięstw pod rząd ─────────────────────
-  console.log('\n═══ 5d. TOP 3 — ostatnie 40 gier chronologicznie (odstępy) ═══\n');
+  console.log('\n═══ 5d. TOP 3 - ostatnie 40 gier chronologicznie (odstępy) ═══\n');
   for (const u of top.slice(0, 3)) {
     console.log(`── ${u.user_id} ──`);
     const seq = await q(
@@ -162,7 +162,7 @@ const fmt = (n) => Number(n ?? 0).toLocaleString('pl-PL');
        WHERE user_id = ? ORDER BY played_at DESC LIMIT 40`, [u.user_id]);
     let prev = null;
     for (const g of seq.reverse()) {
-      const delta = prev ? `+${((Number(g.played_at) - prev) / 1000).toFixed(1)}s` : '—';
+      const delta = prev ? `+${((Number(g.played_at) - prev) / 1000).toFixed(1)}s` : '-';
       prev = Number(g.played_at);
       console.log(`  ${new Date(Number(g.played_at)).toLocaleTimeString('pl-PL')} ${String(delta).padStart(8)} | ${String(g.game_type).padEnd(10)} | ${String(g.result).padEnd(4)} | $${fmt(g.bet_amount)} → $${fmt(g.win_amount)}`);
     }
@@ -170,7 +170,7 @@ const fmt = (n) => Number(n ?? 0).toLocaleString('pl-PL');
   }
 
   // ── 6. Wielokrotne konta (ten sam polecający / farma referali) ───
-  console.log('\n═══ 6. Referale — możliwe multikonta ═══\n');
+  console.log('\n═══ 6. Referale - możliwe multikonta ═══\n');
   const refs = await q(`
     SELECT referred_by, COUNT(*) AS ile FROM users
     WHERE referred_by IS NOT NULL GROUP BY referred_by HAVING ile >= 3 ORDER BY ile DESC LIMIT 10

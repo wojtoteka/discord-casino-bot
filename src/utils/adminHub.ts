@@ -147,7 +147,7 @@ async function watchedEmbed(db: Database): Promise<EmbedBuilder> {
     return EmbedHelper.infoEmbed('👁️ Obserwowani', 'Lista jest pusta.');
   }
   const lines = rows.map(r => {
-    const note = r.note ? ` — ${r.note}` : '';
+    const note = r.note ? ` - ${r.note}` : '';
     return `• \`${r.user_id}\` · ${discordTime(r.created_at)}${note}`;
   });
   return EmbedHelper.infoEmbed(

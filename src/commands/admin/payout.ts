@@ -106,7 +106,7 @@ export default {
           `**Kwota:** ${GameHelper.formatCredits(amount)}\n` +
           `**Status:** ${status}\n` +
           (note ? `**Notatka:** ${note}\n` : '') +
-          `\nTo tylko księga staffu — saldo gracza nie zostało zmienione.`,
+          `\nTo tylko księga staffu - saldo gracza nie zostało zmienione.`,
         )],
         flags: 64,
       });
