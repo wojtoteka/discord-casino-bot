@@ -2669,12 +2669,14 @@ export class Database extends EventEmitter {
 
       let games = 0;
       let roi = 0;
+      let netProfit = 0;
       let roiFlag = false;
       if (hugeWin || watchWin || result === 'win') {
         const stats = await this.getUserGameStats(userId);
         games = stats.games;
+        netProfit = stats.net;
         roi = stats.wagered > 0 ? stats.net / stats.wagered : 0;
-        roiFlag = stats.wagered > 0 && roi > 0.15 && stats.games >= 30;
+        roiFlag = stats.wagered > 0 && roi > 0.15 && stats.games >= 100 && stats.net > 50_000;
       }
 
       if (!hugeWin && !watchWin && !roiFlag) return;
@@ -2686,7 +2688,7 @@ export class Database extends EventEmitter {
 
       const reasons: string[] = [];
       if (hugeWin) reasons.push('ogromna wygrana (≥ $50k albo ≥20× przy zakładzie ≥ $1k)');
-      if (roiFlag) reasons.push(`ROI ${(roi * 100).toFixed(1)}% przy ${games} grach (>15% / 30+)`);
+      if (roiFlag) reasons.push(`ROI ${(roi * 100).toFixed(1)}% przy ${games} grach, zysk netto ${netProfit.toLocaleString('pl-PL')} (>15% / 100+ gier / >50k netto)`);
       if (watchWin) reasons.push('obserwowany, wygrana ≥ $10k');
 
       this.emit('adminAlert', {
