@@ -1,4 +1,4 @@
-import { ActivityType } from 'discord.js';
+import { ActivityType, Status } from 'discord.js';
 import { CasinoBot } from '../index';
 import { startVoteWebhook } from '../utils/voteWebhook';
 import { startVotePoller } from '../utils/votePoller';
@@ -73,8 +73,16 @@ export default {
       status: 'online'
     });
 
-    // Rotate status every 30 seconds
+    // Rotate status every 30 seconds, but skip ticks while any shard is
+    // reconnecting: WebSocketShard.send() parks non-crucial payloads on a
+    // 'ready' listener, so queued presence updates trip the AsyncEventEmitter
+    // max-listeners warning. client.isReady() is not enough here - the
+    // manager status latches to Ready on first login and never goes back.
     setInterval(() => {
+      if (!client.ws.shards.size || client.ws.shards.some(shard => shard.status !== Status.Ready)) {
+        return;
+      }
+
       statusIndex = (statusIndex + 1) % STATUSES.length;
       const status = STATUSES[statusIndex];
       const statusName = status.name.replace('{guilds}', client.guilds.cache.size.toString());
