@@ -3,6 +3,7 @@ import { config } from 'dotenv';
 import { readdirSync } from 'fs';
 import { join } from 'path';
 import { Database } from './database/Database';
+import { attachClientErrorHandlers } from './utils/errorLog';
 
 config();
 
@@ -49,6 +50,9 @@ export class AdminBot extends Client {
   }
 
   public async start(): Promise<void> {
+    // Wpiete przed loginem, zeby zlapac tez bledy z pierwszego polaczenia
+    attachClientErrorHandlers(this, 'ADMIN BOT');
+
     // Initialize database (shared with main bot)
     await this.db.initialize();
 

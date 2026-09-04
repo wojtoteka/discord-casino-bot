@@ -2,6 +2,7 @@ import { CasinoBot } from './index';
 import { AdminBot } from './admin-bot';
 import { execSync } from 'child_process';
 import * as path from 'path';
+import { reportError } from './utils/errorLog';
 
 // Diagnostyka ostrzeżenia "Possible AsyncEventEmitter memory leak detected"
 // (@discordjs/ws / @vladfrangu/async_event_emitter). Ta biblioteka loguje je
@@ -73,11 +74,11 @@ process.on('SIGTERM', () => {
 });
 
 process.on('unhandledRejection', (reason) => {
-  console.error('\n❌ Nieobsluzony Promise rejection:', reason);
+  reportError('Nieobsluzony Promise rejection', reason);
 });
 
 process.on('uncaughtException', (error) => {
-  console.error('\n❌ Nieobsluzony wyjatek:', error);
+  reportError('Nieobsluzony wyjatek', error);
 });
 
 startBots();

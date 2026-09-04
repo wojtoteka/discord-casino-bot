@@ -6,6 +6,7 @@ import { Database } from './database/Database';
 import { sendLevelUpDM, sendAchievementDM, sendBigWinDM, sendWelcomeDM } from './utils/notifications';
 import { sendAdminAlert } from './utils/adminAlerts';
 import { registerMainBotClient } from './utils/mainBotClient';
+import { attachClientErrorHandlers } from './utils/errorLog';
 
 config();
 
@@ -53,6 +54,9 @@ export class CasinoBot extends Client {
   }
 
   public async start(): Promise<void> {
+    // Wpiete przed loginem, zeby zlapac tez bledy z pierwszego polaczenia
+    attachClientErrorHandlers(this, 'ROYALCASINO');
+
     // Initialize database
     await this.db.initialize();
 
