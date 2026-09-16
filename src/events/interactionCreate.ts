@@ -8,6 +8,7 @@ import { COOLDOWNS, GAMES, MAX_BET } from '../config/constants';
 import { withUserLock } from '../utils/moneyLock';
 import { InsufficientFundsError } from '../database/Database';
 import { readGuildSettings, restrictedCasinoChannelId } from '../utils/guildGate';
+import { isUnknownInteractionError } from '../utils/interactions';
 
 const MAINTENANCE_ALLOWED = new Set([
   'pomoc',
@@ -36,13 +37,6 @@ type RepliableLike = {
   reply: (options: any) => Promise<any>;
   followUp: (options: any) => Promise<any>;
 };
-
-function isUnknownInteractionError(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) return false;
-  const code = (error as { code?: number | string }).code;
-  // 10062 = Unknown Interaction (expired), InteractionAlreadyReplied = already responded
-  return code === 10062 || code === 'InteractionAlreadyReplied';
-}
 
 async function safeReply(interaction: RepliableLike, payload: any): Promise<boolean> {
   try {

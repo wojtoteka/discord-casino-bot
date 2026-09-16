@@ -5,6 +5,7 @@ import { EmbedHelper } from '../utils/helpers';
 import { formatAchievementNamesLines } from '../utils/achievements';
 import { getUserLang, slashLocales, t } from '../i18n';
 import { listLine } from '../utils/embeds';
+import { isUnknownInteractionError } from '../utils/interactions';
 
 function getTimeUntilWarsawMidnight(): { hours: number; minutes: number } {
   const parts = new Intl.DateTimeFormat('pl-PL', {
@@ -37,6 +38,16 @@ export default {
   async execute(interaction: ChatInputCommandInteraction) {
     const client = interaction.client as CasinoBot;
     const userId = interaction.user.id;
+
+    // Defer first - claimDaily uses a named user lock (up to 8s), which can
+    // easily outlive the 3s interaction token and cause 10062 Unknown interaction.
+    try {
+      await interaction.deferReply();
+    } catch (error) {
+      if (isUnknownInteractionError(error)) return;
+      throw error;
+    }
+
     const lang = await getUserLang(client.db, userId);
 
     try {
@@ -52,7 +63,7 @@ export default {
             t(lang, 'daily_streak_current')(result.streak),
           ].join('\n'),
         );
-        await interaction.reply({ embeds: [embed], flags: 64 });
+        await interaction.editReply({ embeds: [embed] });
         return;
       }
 
@@ -77,11 +88,18 @@ export default {
       const userData = await client.db.getUser(userId);
       embed.setFooter({ text: t(lang, 'daily_footer')(userData.money) });
 
-      await interaction.reply({ embeds: [embed] });
+      await interaction.editReply({ embeds: [embed] });
     } catch (error) {
+      if (isUnknownInteractionError(error)) return;
       console.error('Błąd daily:', error);
       const embed = EmbedHelper.errorEmbed(t(lang, 'error_title'), t(lang, 'daily_error'));
-      await interaction.reply({ embeds: [embed], flags: 64 });
+      try {
+        await interaction.editReply({ embeds: [embed] });
+      } catch (replyError) {
+        if (!isUnknownInteractionError(replyError)) {
+          console.error('Błąd daily (odpowiedź):', replyError);
+        }
+      }
     }
   },
 };
