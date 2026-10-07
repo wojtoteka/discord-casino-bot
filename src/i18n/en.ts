@@ -1,4 +1,5 @@
 import type { Locale } from './pl';
+import { enExtra } from './extra';
 
 // American English translations - same keys as pl.ts
 export const en: Locale = {
@@ -533,4 +534,6 @@ export const en: Locale = {
 
   duel_guild_disabled_title: 'Duels disabled',
   duel_guild_disabled: 'A server admin turned off duels on this server.',
+
+  ...enExtra,
 };

@@ -1,16 +1,19 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
-import { ChatInputCommandInteraction, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { ChatInputCommandInteraction, EmbedBuilder } from 'discord.js';
 import { CasinoBot } from '../index';
-import { EmbedHelper } from '../utils/helpers';
-import { withOwner } from '../utils/components';
+import { getRequiredXP, getWarsawDateKey } from '../utils/helpers';
 import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
-import { brandTitle, formatUsd, listLine, asQuote } from '../utils/embeds';
+import { brandTitle, formatUsd, listLine } from '../utils/embeds';
+import { navRow } from '../utils/playerNav';
+import { COLORS } from '../config/constants';
+import { getVipTier, vipName } from '../utils/vip';
+import { imageAttachment, renderWallet, safeRender } from '../render';
 
 export default {
   data: new SlashCommandBuilder()
     .setName('balance')
-    .setDescription('💰 Sprawdź swój aktualny balans')
-    .setDescriptionLocalizations(slashLocales('💰 Check your current balance'))
+    .setDescription('💰 Saldo, kredyty, cashback i daily w jednym miejscu')
+    .setDescriptionLocalizations(slashLocales('💰 Balance, credits, cashback and daily at a glance'))
     .addUserOption(option =>
       option
         .setName('użytkownik')
@@ -24,51 +27,56 @@ export default {
     const client     = interaction.client as CasinoBot;
     const targetUser = interaction.options.getUser('użytkownik') || interaction.user;
     const lang       = await getUserLang(client.db, interaction.user.id);
-    const userData   = await client.db.getUser(targetUser.id);
 
-    const level       = userData.level || 1;
-    const xp          = userData.xp || 0;
-    const requiredXP  = Math.floor(100 * Math.pow(level, 1.5));
-    const xpPercent   = Math.min(Math.floor((xp / requiredXP) * 100), 100);
-    const barLength   = 12;
-    const filled      = Math.floor((xpPercent / 100) * barLength);
-    const xpBar       = '█'.repeat(filled) + '░'.repeat(barLength - filled);
+    if (!interaction.deferred && !interaction.replied) await interaction.deferReply();
 
-    const winRate = (userData.total_games || 0) > 0
-      ? (((userData.total_wins || 0) / (userData.total_games || 1)) * 100).toFixed(1)
-      : '0.0';
+    const userData = await client.db.getUser(targetUser.id);
+    const level = userData.level || 1;
+    const tier = getVipTier(Number(userData.total_wagered) || 0);
+    const dailyReady = !userData.last_daily || getWarsawDateKey(userData.last_daily) !== getWarsawDateKey();
 
-    const embed = EmbedHelper.infoEmbed(
-      brandTitle('Saldo'),
-      `Saldo gracza **${targetUser.username}**.\n\n` +
-      `${listLine(t(lang, 'profile_money'), formatUsd(userData.money))}\n` +
-      `${listLine(t(lang, 'profile_credits'), String(userData.credits))}\n` +
-      `${listLine(t(lang, 'profile_level'), String(level))}\n` +
-      `${listLine(t(lang, 'profile_streak'), `${userData.daily_streak || 0}`)}\n` +
-      `${listLine(t(lang, 'profile_played'), String(userData.total_games || 0))}\n` +
-      `${listLine(t(lang, 'profile_wins'), String(userData.total_wins || 0))}\n` +
-      `${listLine(t(lang, 'profile_winrate'), `${winRate}%`)}\n\n` +
-      `${xpBar} **${xpPercent}%**\n` +
-      asQuote(`${xp.toLocaleString()} / ${requiredXP.toLocaleString()} XP\n${t(lang, 'balance_tip')}`),
-    );
+    const image = await safeRender('wallet', () => renderWallet({
+      name: targetUser.globalName ?? targetUser.username,
+      avatarUrl: targetUser.displayAvatarURL({ extension: 'png', size: 128 }),
+      money: userData.money,
+      credits: userData.credits,
+      cashback: Number(userData.rakeback_balance) || 0,
+      vipName: vipName(tier, lang),
+      vipColor: tier.color,
+      level,
+      xp: userData.xp || 0,
+      xpRequired: getRequiredXP(level),
+      dailyReady,
+      streak: userData.daily_streak || 0,
+      labels: {
+        balance: t(lang, 'label_balance'),
+        credits: t(lang, 'card_credits'),
+        cashback: t(lang, 'wallet_cashback'),
+        level: t(lang, 'profile_level'),
+        dailyReady: t(lang, 'wallet_daily_ready'),
+        dailyDone: t(lang, 'wallet_daily_done'),
+        streak: t(lang, 'wallet_streak'),
+      },
+    }));
 
-    embed.setThumbnail(targetUser.displayAvatarURL());
+    const embed = new EmbedBuilder()
+      .setTitle(brandTitle(t(lang, 'balance_title')(targetUser.username)))
+      .setColor(COLORS.gold);
+    if (image) {
+      embed.setImage('attachment://wallet.webp');
+    } else {
+      embed.setDescription([
+        listLine(t(lang, 'profile_money'), formatUsd(userData.money)),
+        listLine(t(lang, 'profile_credits'), String(userData.credits)),
+        listLine(t(lang, 'profile_level'), String(level)),
+        listLine(t(lang, 'profile_streak'), String(userData.daily_streak || 0)),
+      ].join('\n'));
+    }
 
-    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder()
-        .setCustomId(withOwner(`nav:profil:${targetUser.id}`, interaction.user.id))
-        .setLabel(t(lang, 'btn_profile'))
-        .setStyle(ButtonStyle.Primary),
-      new ButtonBuilder()
-        .setCustomId(withOwner(`nav:ranking:${targetUser.id}`, interaction.user.id))
-        .setLabel(t(lang, 'btn_leaderboard'))
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId(withOwner(`nav:questy:${interaction.user.id}`, interaction.user.id))
-        .setLabel(t(lang, 'btn_quests'))
-        .setStyle(ButtonStyle.Secondary),
-    );
-
-    await interaction.reply({ embeds: [embed], components: [row] });
+    await interaction.editReply({
+      embeds: [embed],
+      files: image ? [imageAttachment(image, 'wallet')] : [],
+      components: [navRow(interaction.user.id, targetUser.id, lang, ['profil', 'daily', 'vip', 'questy', 'kasyno'])],
+    });
   },
 };

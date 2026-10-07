@@ -7,6 +7,7 @@ import { sendLevelUpDM, sendAchievementDM, sendBigWinDM, sendWelcomeDM } from '.
 import { sendAdminAlert } from './utils/adminAlerts';
 import { registerMainBotClient } from './utils/mainBotClient';
 import { attachClientErrorHandlers } from './utils/errorLog';
+import { announceBigWin } from './utils/announce';
 
 config();
 
@@ -43,9 +44,11 @@ export class CasinoBot extends Client {
   constructor() {
     super({
       intents: [
+        // GuildMessages only counts chatter for drops; message content is
+        // never read, so the privileged MessageContent intent is not needed -
+        // that keeps the bot eligible for verification past 100 servers.
         IntentsBitField.Flags.Guilds,
         IntentsBitField.Flags.GuildMessages,
-        IntentsBitField.Flags.MessageContent,
       ],
     });
 
@@ -82,8 +85,9 @@ export class CasinoBot extends Client {
       sendAchievementDM(this, userId, achievementIds).catch(() => {});
     });
 
-    this.db.on('bigWin', ({ userId, game, amount }) => {
-      sendBigWinDM(this, userId, game, amount).catch(() => {});
+    this.db.on('bigWin', (payload) => {
+      sendBigWinDM(this, payload.userId, payload.game, payload.amount).catch(() => {});
+      announceBigWin(this, payload).catch(() => {});
     });
 
     this.db.on('newUser', ({ userId }) => {

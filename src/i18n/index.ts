@@ -1,5 +1,6 @@
 import { pl, type Locale } from './pl';
 import { en } from './en';
+import { currentGuildId } from '../utils/requestContext';
 
 export type Lang = 'pl' | 'en';
 
@@ -33,24 +34,49 @@ export function t<K extends keyof Locale>(lang: Lang, key: K): Locale[K] {
 }
 
 type LangStore = {
-  getUserLanguage: (userId: string) => Promise<string>;
+  getUserLanguagePreference?: (userId: string) => Promise<string | null>;
+  getUserLanguage?: (userId: string) => Promise<string>;
+  getGuildSettings?: (guildId: string) => Promise<{ language: string | null }>;
 };
 
 /**
- * Reads the player's saved bot language from the user row.
- * Never uses Discord `interaction.locale` / `guildLocale`.
- * Missing, invalid, or unchosen values are Polish.
+ * The player's language: their own pick from `/ustawienia` first, then the
+ * server default an admin set in `/ustawienia-serwera`, then Polish.
+ * Never uses Discord `interaction.locale` - many Polish players run an English
+ * client, so the client locale is not a reliable signal.
  */
 export async function getUserLang(db: unknown, userId: string): Promise<Lang> {
+  const store = db as LangStore | null;
   try {
-    const getUserLanguage = (db as LangStore | null)?.getUserLanguage;
-    if (typeof getUserLanguage === 'function') {
-      return parseLang(await getUserLanguage.call(db, userId));
+    if (typeof store?.getUserLanguagePreference === 'function') {
+      const own = await store.getUserLanguagePreference(userId);
+      if (own) return parseLang(own);
+      const guildId = currentGuildId();
+      if (guildId && typeof store.getGuildSettings === 'function') {
+        const guild = await store.getGuildSettings(guildId);
+        if (guild?.language) return parseLang(guild.language);
+      }
+      return DEFAULT_LANG;
+    }
+    if (typeof store?.getUserLanguage === 'function') {
+      return parseLang(await store.getUserLanguage(userId));
     }
   } catch {
     // Fall through to default.
   }
   return DEFAULT_LANG;
+}
+
+/** Language for messages that belong to a server rather than a player (drops, welcome). */
+export async function getGuildLang(db: unknown, guildId: string | null | undefined): Promise<Lang> {
+  const store = db as LangStore | null;
+  if (!guildId || typeof store?.getGuildSettings !== 'function') return DEFAULT_LANG;
+  try {
+    const guild = await store.getGuildSettings(guildId);
+    return guild?.language ? parseLang(guild.language) : DEFAULT_LANG;
+  } catch {
+    return DEFAULT_LANG;
+  }
 }
 
 /** Both English locales Discord ships; PL clients keep the builder's default value. */

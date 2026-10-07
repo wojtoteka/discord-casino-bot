@@ -1,26 +1,59 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
-import { ChatInputCommandInteraction } from 'discord.js';
+import { ChatInputCommandInteraction, EmbedBuilder, User } from 'discord.js';
 import { CasinoBot } from '../index';
 import { EmbedHelper, getRequiredXP, getWarsawDateKey } from '../utils/helpers';
 import { ACHIEVEMENT_NAMES } from '../utils/achievements';
-import { asQuote, brandTitle, formatUsd, listLine } from '../utils/embeds';
+import { brandTitle, formatUsd, listLine } from '../utils/embeds';
 import { navRow } from '../utils/playerNav';
-import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
-import { DAILY } from '../config/constants';
+import { getUserLang, slashLocales, slashNameLocales, t, type Lang } from '../i18n';
+import { COLORS } from '../config/constants';
+import type { UserData } from '../database/Database';
+import { getVipTier, vipName } from '../utils/vip';
+import { imageAttachment, renderProfileCard, safeRender, type ProfileCardData } from '../render';
 
-function createProgressBar(percent: number, length: number = 10): string {
-  const capped = Math.min(100, Math.max(0, percent));
-  const filled = Math.min(length, Math.floor((capped / 100) * length));
-  const empty = length - filled;
-  return '█'.repeat(filled) + '░'.repeat(empty);
+/** Everything the profile card needs. Shared with /sklep for theme previews. */
+export async function buildProfileCardData(
+  client: CasinoBot,
+  user: User,
+  data: UserData,
+  lang: Lang,
+): Promise<ProfileCardData> {
+  const [achievements, rank] = await Promise.all([
+    client.db.getUserAchievements(user.id),
+    client.db.getUserMoneyRank(user.id),
+  ]);
+  const tier = getVipTier(Number(data.total_wagered) || 0);
+  const level = data.level || 1;
+  return {
+    username: user.globalName ?? user.username,
+    avatarUrl: user.displayAvatarURL({ extension: 'png', size: 256 }),
+    level,
+    xp: data.xp || 0,
+    xpRequired: getRequiredXP(level),
+    money: data.money,
+    credits: data.credits,
+    totalGames: data.total_games || 0,
+    totalWins: data.total_wins || 0,
+    biggestWin: data.biggest_win || 0,
+    wagered: data.total_wagered || 0,
+    streak: data.daily_streak || 0,
+    achievements: {
+      have: achievements.filter(id => ACHIEVEMENT_NAMES[id]).length,
+      total: Object.keys(ACHIEVEMENT_NAMES).length,
+    },
+    vipName: vipName(tier, lang),
+    vipColor: tier.color,
+    rank,
+    themeId: data.profile_theme,
+  };
 }
 
 export default {
   data: new SlashCommandBuilder()
     .setName('profil')
     .setNameLocalizations(slashNameLocales('profile'))
-    .setDescription('👤 Zobacz swój profil gracza z pełnymi statystykami')
-    .setDescriptionLocalizations(slashLocales('👤 View a player profile and stats'))
+    .setDescription('👤 Karta gracza: saldo, poziom, VIP i statystyki')
+    .setDescriptionLocalizations(slashLocales('👤 Player card: balance, level, VIP and stats'))
     .addUserOption(option =>
       option
         .setName('użytkownik')
@@ -34,88 +67,52 @@ export default {
     const client = interaction.client as CasinoBot;
     const lang = await getUserLang(client.db, interaction.user.id);
     const targetUser = interaction.options.getUser('użytkownik') || interaction.user;
-    const userId = targetUser.id;
 
     await interaction.deferReply();
 
     try {
-      const userData = await client.db.getUser(userId);
-      const achievements = await client.db.getUserAchievements(userId);
+      const userData = await client.db.getUser(targetUser.id);
+      const cardData = await buildProfileCardData(client, targetUser, userData, lang);
+      const image = await safeRender('profile', () => renderProfileCard(cardData, lang));
 
-      const level = userData.level || 1;
-      const xp = userData.xp || 0;
-      const requiredXP = getRequiredXP(level);
-      const xpPercent = Math.min(100, Math.max(0, Math.floor((xp / requiredXP) * 100)));
-      const xpBar = createProgressBar(xpPercent, 10);
+      const lastDailyKey = userData.last_daily ? getWarsawDateKey(userData.last_daily) : '';
+      const dailyReady = lastDailyKey !== getWarsawDateKey();
+      const embed = new EmbedBuilder()
+        .setTitle(brandTitle(t(lang, 'profile_title')))
+        .setColor(COLORS.gold);
 
-      const totalGames = userData.total_games || 0;
-      const totalWins = userData.total_wins || 0;
-      const totalLosses = userData.total_losses || 0;
-      const winRate = totalGames > 0 ? ((totalWins / totalGames) * 100).toFixed(1) : '0.0';
-
-      const streak = userData.daily_streak || 0;
-      const lastDaily = userData.last_daily || 0;
-      const todayKey = getWarsawDateKey();
-      const lastDailyKey = lastDaily > 0 ? getWarsawDateKey(lastDaily) : '';
-      const canClaim = lastDailyKey !== todayKey;
-      const nextStreakBonus = Math.min((canClaim ? streak + 1 : streak) || 1, DAILY.maxStreakDays);
-      const dailyReward = DAILY.baseReward + nextStreakBonus * DAILY.streakBonus;
-
-      const unlockedAchievements = achievements
-        .filter(id => ACHIEVEMENT_NAMES[id])
-        .map(id => {
-          const ach = ACHIEVEMENT_NAMES[id];
-          return `${ach.emoji} **${ach.name}**`;
-        });
-      const totalAchievements = Object.keys(ACHIEVEMENT_NAMES).length;
-      const achievementProgress = `${achievements.length}/${totalAchievements}`;
-
-      let rank = '🥉 Brązowy';
-      if (userData.money >= 1000000) rank = '💎 Diamentowy';
-      else if (userData.money >= 500000) rank = '🏆 Platynowy';
-      else if (userData.money >= 100000) rank = '🥇 Złoty';
-      else if (userData.money >= 50000) rank = '🥈 Srebrny';
-
-      const accountAge = Math.floor((Date.now() - (userData.created_at ? new Date(userData.created_at).getTime() : Date.now())) / (1000 * 60 * 60 * 24));
-
-      const embed = EmbedHelper.goldEmbed(
-        brandTitle(t(lang, 'profile_title')),
-        t(lang, 'profile_intro')(targetUser.username) + '\n\n' +
-        `${listLine(t(lang, 'profile_money'), formatUsd(userData.money))}\n` +
-        `${listLine(t(lang, 'profile_credits'), String(userData.credits))}\n` +
-        `${listLine(t(lang, 'profile_level'), String(level))}\n` +
-        `${listLine(t(lang, 'profile_xp'), `${xp.toLocaleString()}/${requiredXP.toLocaleString()} (${xpPercent}%)`)}\n` +
-        `${listLine(t(lang, 'profile_played'), totalGames.toLocaleString())}\n` +
-        `${listLine(t(lang, 'profile_wins'), totalWins.toLocaleString())}\n` +
-        `${listLine(t(lang, 'profile_losses'), totalLosses.toLocaleString())}\n` +
-        `${listLine(t(lang, 'profile_winrate'), `${winRate}%`)}\n` +
-        `${listLine(t(lang, 'profile_biggest'), formatUsd(userData.biggest_win || 0))}\n` +
-        `${listLine(t(lang, 'profile_wagered'), formatUsd(userData.total_wagered || 0))}\n` +
-        `${listLine(t(lang, 'profile_streak'), String(streak))}\n` +
-        `${listLine(t(lang, 'profile_daily'), canClaim ? t(lang, 'profile_daily_ready') : t(lang, 'profile_daily_done'))}\n` +
-        `${listLine(t(lang, 'profile_daily_reward'), formatUsd(dailyReward))}\n` +
-        `${listLine(t(lang, 'profile_achievements'), achievementProgress)}\n` +
-        `${listLine(t(lang, 'profile_rank'), rank)}\n` +
-        `${listLine(t(lang, 'profile_age'), accountAge > 0 ? t(lang, 'profile_age_days')(accountAge) : t(lang, 'profile_age_new'))}\n` +
-        `${xpBar}\n\n` +
-        (unlockedAchievements.length > 0
-          ? asQuote(
-              unlockedAchievements.slice(0, 8).join('\n')
-              + (unlockedAchievements.length > 8 ? `\n${t(lang, 'profile_more')(unlockedAchievements.length - 8)}` : ''),
-            )
-          : asQuote(t(lang, 'profile_no_achievements'))),
-      );
-      embed.setThumbnail(targetUser.displayAvatarURL());
+      if (image) {
+        embed
+          .setDescription(listLine(
+            t(lang, 'profile_daily'),
+            dailyReady ? t(lang, 'profile_daily_ready') : t(lang, 'profile_daily_done'),
+          ))
+          .setImage('attachment://profile.webp');
+      } else {
+        embed.setDescription([
+          t(lang, 'profile_intro')(targetUser.username),
+          '',
+          listLine(t(lang, 'profile_money'), formatUsd(userData.money)),
+          listLine(t(lang, 'profile_level'), String(cardData.level)),
+          listLine(t(lang, 'profile_played'), cardData.totalGames.toLocaleString()),
+          listLine(t(lang, 'profile_biggest'), formatUsd(cardData.biggestWin)),
+          listLine(t(lang, 'profile_wagered'), formatUsd(cardData.wagered)),
+          listLine('VIP', cardData.vipName),
+        ].join('\n'));
+      }
 
       await interaction.editReply({
         embeds: [embed],
+        files: image ? [imageAttachment(image, 'profile')] : [],
         components: [navRow(interaction.user.id, targetUser.id, lang, [
-          'balance', 'achievementy', 'ranking', 'questy',
+          'balance', 'vip', 'achievementy', 'ranking', 'sklep',
         ])],
       });
     } catch (error) {
       console.error('Błąd profilu:', error);
-      await interaction.editReply({ content: t(lang, 'profile_error') });
+      await interaction.editReply({
+        embeds: [EmbedHelper.errorEmbed(t(lang, 'error_title'), t(lang, 'profile_error'))],
+      });
     }
   },
 };

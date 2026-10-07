@@ -2,6 +2,15 @@ import { Client, EmbedBuilder } from 'discord.js';
 import { BRAND, COLORS } from '../config/constants';
 import { ACHIEVEMENT_NAMES, getAchievementInfo } from './achievements';
 import { asQuote, brandTitle, formatUsd, listLine } from './embeds';
+import { achievementText } from './achievements';
+import { getUserLang, t } from '../i18n';
+import { cmd } from './commandMentions';
+import { gameLabel } from './announce';
+
+/** The casino client carries the DB; notifications only get a plain Client. */
+function db(client: Client): unknown {
+  return (client as Client & { db?: unknown }).db;
+}
 
 const DM_COOLDOWNS_MS = {
   levelUp: 2 * 60 * 1000,
@@ -54,19 +63,20 @@ async function flushAchievementQueue(client: Client, userId: string): Promise<vo
 
   try {
     const user = await client.users.fetch(userId);
+    const lang = await getUserLang(db(client), userId);
 
     const achievementList = achievementIds.map(id => {
       const info = getAchievementInfo(id);
-      return `${info.emoji} **${info.name}**\n${asQuote(info.description)}`;
+      const text = achievementText(id, lang);
+      return `${info.emoji} **${text.name}**\n${asQuote(text.description)}`;
     }).join('\n');
 
     const embed = new EmbedBuilder()
       .setColor(COLORS.purple)
-      .setTitle(brandTitle(achievementIds.length > 1 ? 'Nowe osiągnięcia' : 'Nowe osiągnięcie'))
+      .setTitle(brandTitle(t(lang, 'notif_ach_title')(achievementIds.length)))
       .setDescription(
-        `Odblokowałeś ${achievementIds.length > 1 ? 'nowe osiągnięcia' : 'nowe osiągnięcie'}.\n\n` +
         `${achievementList}\n\n` +
-        asQuote('Sprawdź wszystkie: `/achievementy`'),
+        asQuote(t(lang, 'notif_ach_hint')(cmd('achievementy'))),
       )
       .setFooter({ text: BRAND.footerText })
       .setTimestamp();
@@ -86,16 +96,14 @@ export async function sendLevelUpDM(client: Client, userId: string, newLevel: nu
 
   try {
     const user = await client.users.fetch(userId);
+    const lang = await getUserLang(db(client), userId);
 
     const embed = new EmbedBuilder()
       .setColor(COLORS.gold)
-      .setTitle(brandTitle('Nowy poziom'))
+      .setTitle(brandTitle(t(lang, 'notif_level_title')))
       .setDescription(
-        `Awansowałeś na **poziom ${newLevel}**.\n\n` +
-        `${listLine('Poziom', String(newLevel))}\n\n` +
-        asQuote(
-          `Graj dalej, aby zdobywać XP.\nUżyj \`/profil\` aby zobaczyć postęp.`,
-        ),
+        `${t(lang, 'notif_level_desc')(newLevel)}\n\n` +
+        asQuote(t(lang, 'notif_level_hint')(cmd('profil'), cmd('sklep'))),
       )
       .setFooter({ text: BRAND.footerText })
       .setTimestamp();
@@ -134,15 +142,15 @@ export async function sendBigWinDM(client: Client, userId: string, game: string,
 
   try {
     const user = await client.users.fetch(userId);
+    const lang = await getUserLang(db(client), userId);
 
     const embed = new EmbedBuilder()
       .setColor(COLORS.success)
-      .setTitle(brandTitle('Wielka wygrana'))
+      .setTitle(brandTitle(t(lang, 'notif_bigwin_title')))
       .setDescription(
-        `Wygrałeś dużą pulę.\n\n` +
-        `${listLine('Gra', game)}\n` +
-        `${listLine('Wygrana', formatUsd(amount))}\n\n` +
-        asQuote('Tak trzymaj.'),
+        `${listLine(t(lang, 'notif_game'), gameLabel(game))}\n` +
+        `${listLine(t(lang, 'card_win'), `+${formatUsd(amount)}`)}\n\n` +
+        asQuote(t(lang, 'notif_bigwin_hint')(cmd('vip'))),
       )
       .setFooter({ text: BRAND.footerText })
       .setTimestamp();
@@ -162,17 +170,16 @@ export async function sendWelcomeDM(client: Client, userId: string): Promise<voi
 
   try {
     const user = await client.users.fetch(userId);
+    const lang = await getUserLang(db(client), userId);
 
     const embed = new EmbedBuilder()
       .setColor(COLORS.gold)
-      .setTitle(brandTitle('Witamy'))
+      .setTitle(brandTitle(t(lang, 'notif_welcome_title')))
       .setDescription(
-        `Cześć, **${user.username}**. Witamy w kasynie. Na start masz **$5,000**.\n\n` +
-        `${listLine('Blackjack', '`/blackjack`')}\n` +
-        `${listLine('Crash', '`/crash`')}\n` +
-        `${listLine('Daily', '`/daily`')}\n` +
-        `${listLine('Polecenie', '`/polecenie` - +$2,000')}\n\n` +
-        asQuote('Pełna lista komend: `/pomoc`.'),
+        `${t(lang, 'notif_welcome_desc')(user.globalName ?? user.username)}\n\n` +
+        `${listLine(t(lang, 'help_cat_start'), `${cmd('kasyno')} · ${cmd('daily')}`)}\n` +
+        `${listLine('Crash Live', cmd('crash-live'))}\n` +
+        `${listLine(t(lang, 'referral_title'), `${cmd('polecenie')} · +$2 000`)}`,
       )
       .setFooter({ text: BRAND.footerText })
       .setTimestamp();

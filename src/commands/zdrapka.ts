@@ -2,10 +2,11 @@ import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction } from 'discord.js';
 import { CasinoBot } from '../index';
 import { EmbedHelper, GameHelper } from '../utils/helpers';
-import { formatAchievementNamesInline } from '../utils/achievements';
 import { withOwner } from '../utils/components';
 import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
-import { formatUsd, gameResultEmbed, pendingEmbed, pendingList, playAgainRow } from '../utils/embeds';
+import { formatUsd, playAgainRow } from '../utils/embeds';
+import { gameView, pendingOutcome, settledOutcome, symbolLabel } from '../utils/gameView';
+import { renderScratch, symbolFromEmoji, safeRender } from '../render';
 import { InsufficientFundsError } from '../database/Database';
 import { withUserLock } from '../utils/moneyLock';
 
@@ -99,30 +100,23 @@ export default {
       ? [outcome.sym, outcome.sym, outcome.sym]
       : losingTriple();
 
-    const cells = [COVER, COVER, COVER];
-    await interaction.editReply({
-      embeds: [pendingEmbed(
-        t(lang, 'zdrapka_title'),
-        pendingList(t(lang, 'zdrapka_scratching'), [[t(lang, 'label_bet'), formatUsd(bet)]], renderCard(cells)),
-      )],
-    });
-
-    for (let i = 0; i < 3; i++) {
-      await new Promise(r => setTimeout(r, 650));
-      cells[i] = finalCells[i];
-      await interaction.editReply({
-        embeds: [pendingEmbed(
-          t(lang, 'zdrapka_title'),
-          pendingList(
-            i < 2 ? t(lang, 'zdrapka_scratching') : t(lang, 'zdrapka_checking'),
-            [[t(lang, 'label_bet'), formatUsd(bet)]],
-            renderCard(cells),
-          ),
-        )],
-      });
+    const revealed: Array<string | null> = [null, null, null];
+    for (let i = 0; i <= 2; i++) {
+      await interaction.editReply(gameView({
+        lang,
+        title: t(lang, 'zdrapka_title'),
+        kind: 'pending',
+        image: await safeRender('zdrapka', () => renderScratch({
+          cells: revealed.map(c => (c ? symbolFromEmoji(c) : null)),
+          winning: false,
+          outcome: pendingOutcome(t(lang, 'card_scratching'), [[t(lang, 'label_bet'), formatUsd(bet)]]),
+        })),
+        imageName: 'zdrapka',
+        summary: i < 2 ? t(lang, 'zdrapka_scratching') : t(lang, 'zdrapka_checking'),
+      }));
+      await new Promise(r => setTimeout(r, 600));
+      revealed[i] = finalCells[i];
     }
-
-    await new Promise(r => setTimeout(r, 400));
 
     const winnings = outcome ? Math.floor(bet * outcome.mult) : 0;
     const won = winnings > bet;
@@ -140,13 +134,6 @@ export default {
     const newAchievements = await client.db.checkAchievements(userId);
     const newData = await client.db.getUser(userId);
 
-    let extra = outcome
-      ? t(lang, 'zdrapka_triple')(outcome.sym, outcome.mult)
-      : t(lang, 'zdrapka_miss');
-    if (newAchievements.length > 0) {
-      extra += t(lang, 'new_achievements')(formatAchievementNamesInline(newAchievements));
-    }
-
     const row = playAgainRow({
       customIdPlayAgain: withOwner(`play_again:zdrapka:${bet}`, userId),
       customIdBalance: withOwner(`nav:balance:${userId}`, userId),
@@ -154,15 +141,35 @@ export default {
       balanceLabel: t(lang, 'btn_balance'),
     });
 
-    const embed = gameResultEmbed({
-      title: outcome && outcome.mult >= 25 ? `${t(lang, 'zdrapka_title')} · Jackpot` : t(lang, 'zdrapka_title'),
-      won,
-      bet,
-      result: renderCard(finalCells),
-      balance: newData.money,
-      extra,
+    const kind = won ? 'win' : 'loss';
+    const combo = outcome
+      ? t(lang, 'card_triple')(symbolLabel(lang, symbolFromEmoji(outcome.sym)))
+      : t(lang, 'card_nothing');
+    const image = await safeRender('zdrapka', () => renderScratch({
+      cells: finalCells.map(symbolFromEmoji),
+      winning: Boolean(outcome),
+      outcome: settledOutcome({
+        lang,
+        kind,
+        net: winnings - bet,
+        bet,
+        balance: newData.money,
+        rows: [
+          [t(lang, 'card_combo'), combo],
+          ...(outcome ? [[t(lang, 'card_mult'), `×${outcome.mult}`] as [string, string]] : []),
+        ],
+      }),
+    }));
+    await interaction.editReply(gameView({
       lang,
-    });
-    await interaction.editReply({ embeds: [embed], components: [row] });
+      title: outcome && outcome.mult >= 25 ? `${t(lang, 'zdrapka_title')} · Jackpot` : t(lang, 'zdrapka_title'),
+      kind,
+      image,
+      imageName: 'zdrapka',
+      summary: outcome ? t(lang, 'zdrapka_triple')(outcome.sym, outcome.mult) : t(lang, 'zdrapka_miss'),
+      fallback: renderCard(finalCells),
+      achievements: newAchievements,
+      components: [row],
+    }));
   },
 };

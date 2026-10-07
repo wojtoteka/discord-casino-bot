@@ -2,11 +2,12 @@
 import { ChatInputCommandInteraction } from 'discord.js';
 import { CasinoBot } from '../index';
 import { EmbedHelper, GameHelper } from '../utils/helpers';
-import { formatAchievementNamesInline } from '../utils/achievements';
 import { withOwner } from '../utils/components';
 import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
 import { GAMES } from '../config/constants';
-import { formatUsd, gameResultEmbed, pendingEmbed, pendingList, playAgainRow } from '../utils/embeds';
+import { formatUsd, playAgainRow } from '../utils/embeds';
+import { gameView, pendingOutcome, settledOutcome } from '../utils/gameView';
+import { renderCoinflip, safeRender } from '../render';
 import { InsufficientFundsError } from '../database/Database';
 import { withUserLock } from '../utils/moneyLock';
 
@@ -73,12 +74,21 @@ export default {
       throw error;
     }
 
-    await interaction.editReply({
-      embeds: [pendingEmbed(
-        t(lang, 'coinflip_title'),
-        pendingList(t(lang, 'coinflip_spinning'), [[t(lang, 'label_bet'), formatUsd(bet)]]),
-      )],
-    });
+    const sideLabel = (side: string) => side === 'heads' ? t(lang, 'card_heads') : t(lang, 'card_tails');
+    await interaction.editReply(gameView({
+      lang,
+      title: t(lang, 'coinflip_title'),
+      kind: 'pending',
+      image: await safeRender('coinflip', () => renderCoinflip({
+        face: null,
+        outcome: pendingOutcome(t(lang, 'card_coin_air'), [
+          [t(lang, 'label_bet'), formatUsd(bet)],
+          [t(lang, 'card_type'), sideLabel(choice)],
+        ]),
+      })),
+      imageName: 'coinflip',
+      summary: t(lang, 'coinflip_spinning'),
+    }));
     await new Promise(r => setTimeout(r, 1000));
 
     const result     = GameHelper.getRandomChoice(['heads', 'tails']);
@@ -106,20 +116,31 @@ export default {
     const newAchievements = await client.db.checkAchievements(userId);
     const newData = await client.db.getUser(userId);
 
-    const embed = gameResultEmbed({
-      title: t(lang, 'coinflip_title'),
-      won,
-      bet,
-      result: resultText,
-      balance: newData.money,
-      details: [[t(lang, 'coinflip_choice'), choiceText]],
-      extra: won
-        ? (newAchievements.length > 0
-          ? t(lang, 'new_achievements')(formatAchievementNamesInline(newAchievements)).trim()
-          : t(lang, 'coinflip_win')(payout - bet))
-        : t(lang, 'coinflip_loss')(bet),
+    const kind = won ? 'win' : 'loss';
+    const image = await safeRender('coinflip', () => renderCoinflip({
+      face: result as 'heads' | 'tails',
+      outcome: settledOutcome({
+        lang,
+        kind,
+        net: won ? payout - bet : -bet,
+        bet,
+        balance: newData.money,
+        rows: [
+          [t(lang, 'card_type'), sideLabel(choice)],
+          [t(lang, 'card_result'), sideLabel(result)],
+        ],
+      }),
+    }));
+    await interaction.editReply(gameView({
       lang,
-    });
-    await interaction.editReply({ embeds: [embed], components: [row] });
+      title: t(lang, 'coinflip_title'),
+      kind,
+      image,
+      imageName: 'coinflip',
+      summary: won ? t(lang, 'coinflip_win')(payout - bet) : t(lang, 'coinflip_loss')(bet),
+      fallback: `${choiceText} → ${resultText}`,
+      achievements: newAchievements,
+      components: [row],
+    }));
   },
 };

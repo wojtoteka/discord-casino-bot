@@ -2,90 +2,66 @@ import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction, ActionRowBuilder, StringSelectMenuBuilder, EmbedBuilder } from 'discord.js';
 import { CasinoBot } from '../index';
 import { withOwner } from '../utils/components';
-import { BRAND, COLORS, ECONOMY } from '../config/constants';
+import { BRAND, COLORS, DROPS, ECONOMY, JACKPOT } from '../config/constants';
 import { brandTitle, listLine } from '../utils/embeds';
+import { cmd } from '../utils/commandMentions';
 import { getUserLang, slashLocales, slashNameLocales, t, type Lang } from '../i18n';
+import { gameSections, linkRow } from './kasyno';
 
-export function createMainEmbed(username: string, lang: Lang = 'pl'): EmbedBuilder {
+function base(lang: Lang, color: number, title: string): EmbedBuilder {
   return new EmbedBuilder()
-    .setColor(COLORS.gold)
-    .setTitle(brandTitle(t(lang, 'help_title')))
-    .setDescription(
-      `${t(lang, 'help_welcome')(username)}\n\n` +
-      `${listLine(t(lang, 'help_cat_games'), '`/blackjack` · `/ruletka` · `/plinko` · `/limbo`')}\n` +
-      `${listLine(t(lang, 'help_cat_economy'), '`/balance` · `/daily` · `/kup-kredyty`')}\n` +
-      `${listLine(t(lang, 'help_cat_progress'), '`/achievementy` · `/questy` · `/vote`')}\n` +
-      `${listLine(t(lang, 'help_cat_settings'), '`/ustawienia` · `/ustawienia-serwera` · `/zgłoszenie`')}`,
-    )
+    .setColor(color)
+    .setTitle(brandTitle(title))
     .setFooter({ text: BRAND.footerText })
     .setTimestamp();
+}
+
+export function createMainEmbed(username: string, lang: Lang = 'pl'): EmbedBuilder {
+  return base(lang, COLORS.gold, t(lang, 'help_title')).setDescription(
+    `${t(lang, 'help_welcome')(username)}\n\n` +
+    `${listLine(t(lang, 'help_cat_start'), `${cmd('kasyno')} · ${cmd('daily')} · ${cmd('crash-live')}`)}\n` +
+    `${listLine(t(lang, 'help_cat_games'), `${cmd('blackjack')} · ${cmd('ruletka')} · ${cmd('miny')} · ${cmd('limbo')}`)}\n` +
+    `${listLine(t(lang, 'help_cat_economy'), `${cmd('balance')} · ${cmd('vip')} · ${cmd('jackpot')}`)}\n` +
+    `${listLine(t(lang, 'help_cat_progress'), `${cmd('profil')} · ${cmd('questy')} · ${cmd('sklep')}`)}\n` +
+    `${listLine(t(lang, 'help_cat_settings'), `${cmd('ustawienia')} · ${cmd('ustawienia-serwera')} · ${cmd('zgłoszenie')}`)}`,
+  );
 }
 
 export function createGamesEmbed(lang: Lang = 'pl'): EmbedBuilder {
-  return new EmbedBuilder()
-    .setColor(COLORS.error)
-    .setTitle(brandTitle(t(lang, 'help_cat_games')))
-    .setDescription(
-      `${t(lang, 'help_games_intro')}\n\n` +
-      `${listLine('Blackjack `/blackjack`', '21 · 2× · BJ 2.5×')}\n` +
-      `${listLine('Poker `/poker`', 'Hold\'em vs krupier · min. $500')}\n` +
-      `${listLine('Ruletka `/ruletka`', '2×-35×')}\n` +
-      `${listLine('Slots `/slots`', t(lang, 'help_slots_payouts'))}\n` +
-      `${listLine('Coinflip `/coinflip`', '2×')}\n` +
-      `${listLine('Dice `/dice`', '5×')}\n` +
-      `${listLine('Crash `/crash`', t(lang, 'crash_cashout'))}\n` +
-      `${listLine('War `/war`', '2× · wojna 3×')}\n` +
-      `${listLine('Hi-Lo `/hilo`', t(lang, 'hilo_prompt'))}\n` +
-      `${listLine('Miny `/miny`', t(lang, 'help_mines_grid'))}\n` +
-      `${listLine('Zdrapka `/zdrapka`', '2×-25×')}\n` +
-      `${listLine('Koło `/kolo`', t(lang, 'help_kolo_payouts'))}\n` +
-      `${listLine('Keno `/keno`', 'do 500×')}\n` +
-      `${listLine('Pojedynek `/pojedynek`', '50/50')}\n` +
-      `${listLine('Plinko `/plinko`', '8 rzędów')}\n` +
-      `${listLine('Limbo `/limbo`', t(lang, 'limbo_target'))}`,
-    )
-    .setFooter({ text: BRAND.footerText })
-    .setTimestamp();
+  const sections = gameSections(lang).slice(0, 4).map(([title, body]) => `**${title}**\n${body}`).join('\n\n');
+  return base(lang, COLORS.error, t(lang, 'help_cat_games')).setDescription(
+    `${t(lang, 'help_games_intro')}\n\n${sections}\n\n> ${t(lang, 'help_games_tip')}`,
+  );
 }
 
 export function createEconomyEmbed(lang: Lang = 'pl'): EmbedBuilder {
-  return new EmbedBuilder()
-    .setColor(COLORS.success)
-    .setTitle(brandTitle(t(lang, 'help_cat_economy')))
-    .setDescription(
-      `${t(lang, 'help_economy_intro')}\n\n` +
-      `${listLine('Finanse', '`/balance` · `/daily` · `/kup-kredyty` · `/sprzedaj-kredyty`')}\n` +
-      `${listLine(t(lang, 'help_settings_label'), t(lang, 'help_settings_desc'))}\n` +
-      `${listLine('Kredyt', t(lang, 'help_credit_rate')(ECONOMY.creditBuyRate, ECONOMY.creditSellRate))}\n` +
-      `${listLine(t(lang, 'referral_title'), '`/polecenie`')}\n` +
-      `${listLine('Daily', '`/daily`')}\n` +
-      `${listLine('Rankingi', '`/ranking` · `/top`')}`,
-    )
-    .setFooter({ text: BRAND.footerText })
-    .setTimestamp();
+  return base(lang, COLORS.success, t(lang, 'help_cat_economy')).setDescription(
+    `${t(lang, 'help_economy_intro')}\n\n` +
+    `${listLine(t(lang, 'help_eco_start'), `$${ECONOMY.startingMoney.toLocaleString()}`)}\n` +
+    `${listLine('Daily', `${cmd('daily')} - ${t(lang, 'help_eco_daily')}`)}\n` +
+    `${listLine('VIP', `${cmd('vip')} - ${t(lang, 'help_eco_vip')}`)}\n` +
+    `${listLine('Jackpot', `${cmd('jackpot')} - ${t(lang, 'help_eco_jackpot')(`$${JACKPOT.ticketPrice.toLocaleString()}`)}`)}\n` +
+    `${listLine(t(lang, 'help_eco_drops'), t(lang, 'help_eco_drops_desc')(DROPS.maxClaimsPerUserPerDay))}\n` +
+    `${listLine(t(lang, 'help_eco_credits'), `${cmd('kup-kredyty')} · ${cmd('sprzedaj-kredyty')} - ${t(lang, 'help_credit_rate')(ECONOMY.creditBuyRate, ECONOMY.creditSellRate)}`)}\n` +
+    `${listLine(t(lang, 'referral_title'), `${cmd('polecenie')} · ${cmd('zapros')}`)}\n` +
+    `${listLine(t(lang, 'help_eco_rankings'), `${cmd('ranking')} · ${cmd('top')}`)}`,
+  );
 }
 
 export function createProgressEmbed(lang: Lang = 'pl'): EmbedBuilder {
-  return new EmbedBuilder()
-    .setColor(COLORS.purple)
-    .setTitle(brandTitle(t(lang, 'help_cat_progress')))
-    .setDescription(
-      `${t(lang, 'help_progress_intro')}\n\n` +
-      `${listLine('XP', 'Gra +10 · wygrana +15')}\n` +
-      `${listLine(t(lang, 'profile_achievements'), '`/achievementy`')}\n` +
-      `${listLine('Questy', '`/questy`')}`,
-    )
-    .setFooter({ text: BRAND.footerText })
-    .setTimestamp();
+  return base(lang, COLORS.purple, t(lang, 'help_cat_progress')).setDescription(
+    `${t(lang, 'help_progress_intro')}\n\n` +
+    `${listLine('XP', t(lang, 'help_xp_rule'))}\n` +
+    `${listLine(t(lang, 'profile_achievements'), cmd('achievementy'))}\n` +
+    `${listLine(t(lang, 'help_quests'), cmd('questy'))}\n` +
+    `${listLine(t(lang, 'help_profile'), `${cmd('profil')} · ${cmd('sklep')}`)}`,
+  );
 }
 
 export function createSettingsEmbed(lang: Lang = 'pl'): EmbedBuilder {
-  return new EmbedBuilder()
-    .setColor(COLORS.info)
-    .setTitle(brandTitle(t(lang, 'help_cat_settings')))
-    .setDescription(t(lang, 'help_settings_page'))
-    .setFooter({ text: BRAND.footerText })
-    .setTimestamp();
+  return base(lang, COLORS.info, t(lang, 'help_cat_settings')).setDescription(
+    t(lang, 'help_settings_page_v2')(cmd('ustawienia'), cmd('ustawienia-serwera'), cmd('zgłoszenie')),
+  );
 }
 
 export function buildHelpSelectMenu(ownerId: string, lang: Lang = 'pl'): ActionRowBuilder<StringSelectMenuBuilder> {
@@ -96,9 +72,9 @@ export function buildHelpSelectMenu(ownerId: string, lang: Lang = 'pl'): ActionR
         .setPlaceholder(t(lang, 'help_placeholder'))
         .addOptions(
           { label: t(lang, 'help_home'), description: t(lang, 'help_title'), value: 'main', emoji: '🏠' },
-          { label: t(lang, 'help_cat_games'), description: 'Blackjack, Plinko, Limbo…', value: 'games', emoji: '🎮' },
-          { label: t(lang, 'help_cat_economy'), description: 'Daily, kredyty, rankingi', value: 'economy', emoji: '💰' },
-          { label: t(lang, 'help_cat_progress'), description: 'XP, osiągnięcia', value: 'progress', emoji: '🏆' },
+          { label: t(lang, 'help_cat_games'), description: t(lang, 'help_menu_games'), value: 'games', emoji: '🎮' },
+          { label: t(lang, 'help_cat_economy'), description: t(lang, 'help_menu_economy'), value: 'economy', emoji: '💰' },
+          { label: t(lang, 'help_cat_progress'), description: t(lang, 'help_menu_progress'), value: 'progress', emoji: '🏆' },
           { label: t(lang, 'help_cat_settings'), description: t(lang, 'help_settings_desc'), value: 'settings', emoji: '⚙️' },
         ),
     );
@@ -114,7 +90,10 @@ export default {
   async execute(interaction: ChatInputCommandInteraction) {
     const client = interaction.client as CasinoBot;
     const lang = await getUserLang(client.db, interaction.user.id);
-    const embed = createMainEmbed(interaction.user.username, lang);
-    await interaction.reply({ embeds: [embed], components: [buildHelpSelectMenu(interaction.user.id, lang)] });
+    const embed = createMainEmbed(interaction.user.globalName ?? interaction.user.username, lang);
+    await interaction.reply({
+      embeds: [embed],
+      components: [buildHelpSelectMenu(interaction.user.id, lang), linkRow(lang)],
+    });
   },
 };

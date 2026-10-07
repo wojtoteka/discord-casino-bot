@@ -5,6 +5,7 @@ import { ADMIN_ID, getAdminDb, handleAdminButton } from '../../utils/adminShared
 import { handleReportsPanel } from '../../utils/reportsPanel';
 import { handlePayoutsPanel } from '../../utils/payoutsPanel';
 import { handleAdminHub } from '../../utils/adminHub';
+import { handleAdminPanelComponent, handleAdminPanelModal } from '../../utils/adminPanel';
 
 function isAdminButton(customId: string): boolean {
   return customId.startsWith('admin_ok:')
@@ -17,11 +18,25 @@ const PANEL_HANDLERS = [
   { prefix: 'admin_rep:', handle: handleReportsPanel },
   { prefix: 'admin_pay:', handle: handlePayoutsPanel },
   { prefix: 'admin_hub:', handle: handleAdminHub },
+  { prefix: 'apanel:', handle: handleAdminPanelComponent },
 ] as const;
 
 export default {
   name: 'interactionCreate',
   async execute(interaction: Interaction) {
+    if (interaction.isModalSubmit() && interaction.customId.startsWith('apanel_m:')) {
+      if (interaction.user.id !== ADMIN_ID) return;
+      try {
+        await handleAdminPanelModal(getAdminDb(interaction), interaction);
+      } catch (error) {
+        console.error('[ADMIN BOT] Błąd modala panelu:', error);
+        if (!interaction.replied && !interaction.deferred) {
+          await interaction.reply({ content: '❌ Błąd podczas zapisu.', flags: 64 }).catch(() => {});
+        }
+      }
+      return;
+    }
+
     if (interaction.isButton() || interaction.isStringSelectMenu()) {
       if (interaction.user.id !== ADMIN_ID) {
         await interaction.reply({

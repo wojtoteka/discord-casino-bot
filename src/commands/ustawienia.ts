@@ -21,6 +21,7 @@ export function buildSettingsView(
   uiLang: Lang,
   storedLang: Lang,
   duelEnabled: boolean,
+  voteReminder = false,
 ) {
   const ts = Date.now();
   const embed = pendingEmbed(
@@ -32,6 +33,10 @@ export function buildSettingsView(
         [
           t(uiLang, 'settings_duel_label'),
           duelEnabled ? t(uiLang, 'settings_duel_on') : t(uiLang, 'settings_duel_off'),
+        ],
+        [
+          t(uiLang, 'settings_remind_label'),
+          voteReminder ? t(uiLang, 'settings_duel_on') : t(uiLang, 'settings_duel_off'),
         ],
       ],
       t(uiLang, 'settings_hint'),
@@ -64,7 +69,20 @@ export function buildSettingsView(
       .setStyle(!duelEnabled ? ButtonStyle.Primary : ButtonStyle.Secondary),
   );
 
-  return { embeds: [embed], components: [langRow, duelRow] };
+  const remindRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`settings:remind:${voteReminder ? '0' : '1'}:${userId}:${ts}`)
+      .setEmoji('🔔')
+      .setLabel(voteReminder ? t(uiLang, 'settings_btn_remind_off') : t(uiLang, 'settings_btn_remind_on'))
+      .setStyle(voteReminder ? ButtonStyle.Secondary : ButtonStyle.Primary),
+  );
+
+  return { embeds: [embed], components: [langRow, duelRow, remindRow] };
+}
+
+async function reminderOn(client: CasinoBot, userId: string): Promise<boolean> {
+  const user = await client.db.getUser(userId);
+  return Number(user.vote_reminder) === 1;
 }
 
 export async function handleSettingsButton(
@@ -78,14 +96,14 @@ export async function handleSettingsButton(
   if (action === 'lang') {
     if (!isLang(value)) {
       const duelEnabled = await client.db.isDuelEnabled(userId);
-      await interaction.update(buildSettingsView(userId, lang, lang, duelEnabled));
+      await interaction.update(buildSettingsView(userId, lang, lang, duelEnabled, await reminderOn(client, userId)));
       return;
     }
     const next = value;
     const prev = lang;
     await client.db.setUserLanguage(userId, next);
     const duelEnabled = await client.db.isDuelEnabled(userId);
-    await interaction.update(buildSettingsView(userId, next, next, duelEnabled));
+    await interaction.update(buildSettingsView(userId, next, next, duelEnabled, await reminderOn(client, userId)));
     if (prev !== next) {
       await interaction.followUp({
         content: t(next, 'settings_language_changed')(langName(next, next)),
@@ -94,11 +112,22 @@ export async function handleSettingsButton(
     }
     return;
   }
+  if (action === 'remind') {
+    const enabled = value === '1';
+    await client.db.setVoteReminder(userId, enabled);
+    const duelEnabled = await client.db.isDuelEnabled(userId);
+    await interaction.update(buildSettingsView(userId, lang, lang, duelEnabled, enabled));
+    await interaction.followUp({
+      content: enabled ? t(lang, 'settings_remind_changed_on') : t(lang, 'settings_remind_changed_off'),
+      flags: 64,
+    }).catch(() => {});
+    return;
+  }
   if (action === 'duel') {
     const enabled = value === '1';
     const wasEnabled = await client.db.isDuelEnabled(userId);
     await client.db.setDuelEnabled(userId, enabled);
-    await interaction.update(buildSettingsView(userId, lang, lang, enabled));
+    await interaction.update(buildSettingsView(userId, lang, lang, enabled, await reminderOn(client, userId)));
     if (wasEnabled !== enabled) {
       await interaction.followUp({
         content: enabled ? t(lang, 'settings_duel_changed_on') : t(lang, 'settings_duel_changed_off'),
@@ -109,15 +138,15 @@ export async function handleSettingsButton(
   }
 
   const duelEnabled = await client.db.isDuelEnabled(userId);
-  await interaction.update(buildSettingsView(userId, lang, lang, duelEnabled));
+  await interaction.update(buildSettingsView(userId, lang, lang, duelEnabled, await reminderOn(client, userId)));
 }
 
 export default {
   data: new SlashCommandBuilder()
     .setName('ustawienia')
     .setNameLocalizations(slashNameLocales('settings'))
-    .setDescription('🔧 Język bota i przyjmowanie pojedynków')
-    .setDescriptionLocalizations(slashLocales('🔧 Bot language and incoming duel challenges')),
+    .setDescription('🔧 Język bota, pojedynki i przypomnienia o głosowaniu')
+    .setDescriptionLocalizations(slashLocales('🔧 Bot language, duel challenges and vote reminders')),
 
   async execute(interaction: ChatInputCommandInteraction) {
     const client = interaction.client as CasinoBot;
@@ -125,6 +154,6 @@ export default {
     // Read-only: Discord locale / guildLocale must not change bot language.
     const storedLang = await getUserLang(client.db, userId);
     const duelEnabled = await client.db.isDuelEnabled(userId);
-    await interaction.reply(buildSettingsView(userId, storedLang, storedLang, duelEnabled));
+    await interaction.reply(buildSettingsView(userId, storedLang, storedLang, duelEnabled, await reminderOn(client, userId)));
   },
 };

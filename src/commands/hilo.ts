@@ -1,19 +1,20 @@
-﻿import { SlashCommandBuilder } from '@discordjs/builders';
+import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction, ActionRowBuilder, ButtonBuilder, ButtonInteraction, ButtonStyle, ComponentType } from 'discord.js';
 import { CasinoBot } from '../index';
 import { EmbedHelper, GameHelper } from '../utils/helpers';
-import { formatAchievementNamesInline } from '../utils/achievements';
 import { withOwner } from '../utils/components';
 import { HILO } from '../config/constants';
-import { formatUsd, gameResultEmbed, pendingEmbed, pendingList, playAgainRow } from '../utils/embeds';
-import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
+import { formatUsd, playAgainRow } from '../utils/embeds';
+import { getUserLang, slashLocales, slashNameLocales, t, type Lang } from '../i18n';
 import { InsufficientFundsError } from '../database/Database';
 import { withUserLock } from '../utils/moneyLock';
+import { gameView, pendingOutcome, settledOutcome } from '../utils/gameView';
+import { renderHilo, safeRender, suitFromSymbol, type CardFace, type CardOutcome } from '../render';
 
 const SUITS = ['♠️', '♥️', '♦️', '♣️'];
 const activeHilo = new Set<string>();
 
-function hiloPlayAgainRow(bet: number, userId: string, lang: 'pl' | 'en') {
+function hiloPlayAgainRow(bet: number, userId: string, lang: Lang) {
   return playAgainRow({
     customIdPlayAgain: withOwner(`play_again:hilo:${bet}`, userId),
     customIdBalance: withOwner(`nav:balance:${userId}`, userId),
@@ -27,10 +28,16 @@ const VALUE_MAP: { [key: string]: number } = {
   '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14
 };
 
-function drawCard(): { value: string; suit: string; rank: number } {
+type HiloCard = { value: string; suit: string; rank: number };
+
+function drawCard(): HiloCard {
   const value = VALUES[Math.floor(Math.random() * VALUES.length)];
   const suit = SUITS[Math.floor(Math.random() * SUITS.length)];
   return { value, suit, rank: VALUE_MAP[value] };
+}
+
+function face(card: HiloCard): CardFace {
+  return { rank: card.value, suit: suitFromSymbol(card.suit) };
 }
 
 function formatCard(card: { value: string; suit: string }): string {
@@ -61,7 +68,7 @@ function calculateMultiplier(currentCard: { rank: number }, direction: 'higher' 
 export default {
   data: new SlashCommandBuilder()
     .setName('hilo')
-    .setDescription('🔼 Wyższa czy Niższa? Zgadnij i mnóż wygraną!')
+    .setDescription('🔼 Wyższa czy niższa? Zgadnij i mnóż wygraną!')
     .setDescriptionLocalizations(slashLocales('🔼 Higher or lower? Guess and stack the multiplier'))
     .addIntegerOption(option =>
       option
@@ -77,26 +84,22 @@ export default {
     const client = interaction.client as CasinoBot;
     const bet = interaction.options.getInteger('zakład', true);
     const userId = interaction.user.id;
-
     const lang = await getUserLang(client.db, userId);
-
     const userData = await client.db.getUser(userId);
 
     if (!GameHelper.canAfford(userData.money, bet)) {
-      const embed = EmbedHelper.errorEmbed(
-        t(lang, 'insufficient_funds_title'),
-        t(lang, 'error_insufficient_funds')(bet, userData.money),
-      );
-      await interaction.reply({ embeds: [embed], flags: 64 });
+      await interaction.reply({
+        embeds: [EmbedHelper.errorEmbed(t(lang, 'insufficient_funds_title'), t(lang, 'error_insufficient_funds')(bet, userData.money))],
+        flags: 64,
+      });
       return;
     }
 
     if (activeHilo.has(userId)) {
-      const embed = EmbedHelper.warningEmbed(
-        t(lang, 'game_in_progress_title'),
-        t(lang, 'game_in_progress'),
-      );
-      await interaction.reply({ embeds: [embed], flags: 64 });
+      await interaction.reply({
+        embeds: [EmbedHelper.warningEmbed(t(lang, 'game_in_progress_title'), t(lang, 'game_in_progress'))],
+        flags: 64,
+      });
       return;
     }
 
@@ -108,10 +111,7 @@ export default {
       if (error instanceof InsufficientFundsError) {
         const latest = await client.db.getUser(userId);
         await interaction.reply({
-          embeds: [EmbedHelper.errorEmbed(
-            t(lang, 'insufficient_funds_title'),
-            t(lang, 'error_insufficient_funds')(bet, latest.money),
-          )],
+          embeds: [EmbedHelper.errorEmbed(t(lang, 'insufficient_funds_title'), t(lang, 'error_insufficient_funds')(bet, latest.money))],
           flags: 64,
         });
         return;
@@ -120,54 +120,72 @@ export default {
     }
 
     let currentCard = drawCard();
+    const history: CardFace[] = [];
     let totalMultiplier = 1.0;
     let round = 1;
     let settled = false;
 
-    const buildGameEmbed = (message?: string) => {
-      const potentialWin = Math.floor(bet * totalMultiplier);
-      return pendingEmbed(
-        t(lang, 'hilo_title'),
-        pendingList(
-          message || t(lang, 'hilo_prompt'),
-          [
-            [t(lang, 'hilo_card'), formatCard(currentCard)],
-            [t(lang, 'label_bet'), formatUsd(bet)],
-            [t(lang, 'hilo_round'), String(round)],
-            [t(lang, 'hilo_multi'), `x${totalMultiplier.toFixed(2)}`],
-            [t(lang, 'hilo_potential'), formatUsd(potentialWin)],
-          ],
-        ),
-      );
-    };
+    const view = async (params: {
+      kind: 'win' | 'loss' | 'pending';
+      outcome: CardOutcome;
+      summary: string;
+      next?: HiloCard;
+      direction?: 'higher' | 'lower';
+      components: Array<ActionRowBuilder<ButtonBuilder>>;
+    }) => gameView({
+      lang,
+      title: t(lang, 'hilo_title'),
+      kind: params.kind,
+      image: await safeRender('hilo', () => renderHilo({
+        history,
+        current: face(currentCard),
+        next: params.next ? face(params.next) : undefined,
+        nextLabel: params.direction ? (params.direction === 'higher' ? t(lang, 'hilo_higher') : t(lang, 'hilo_lower')) : undefined,
+        outcome: params.outcome,
+      })),
+      imageName: 'hilo',
+      summary: params.summary,
+      fallback: `${t(lang, 'hilo_card')}: ${formatCard(currentCard)}`,
+      components: params.components,
+    });
+
+    const playingOutcome = () => pendingOutcome(t(lang, 'card_hilo_prompt'), [
+      [t(lang, 'label_bet'), formatUsd(bet)],
+      [t(lang, 'card_mult'), `×${totalMultiplier.toFixed(2)}`],
+      [t(lang, 'card_to_cash'), formatUsd(Math.floor(bet * totalMultiplier))],
+      [t(lang, 'card_round'), String(round)],
+    ]);
 
     const buildButtons = () => {
       const higherMult = calculateMultiplier(currentCard, 'higher');
       const lowerMult = calculateMultiplier(currentCard, 'lower');
       const canCashout = round > 1;
-
-      return new ActionRowBuilder<ButtonBuilder>()
-        .addComponents(
-          new ButtonBuilder()
-            .setCustomId('hilo_higher')
-            .setLabel(higherMult > 0 ? `⬆️ ${t(lang, 'hilo_higher')} (x${higherMult.toFixed(2)})` : `⬆️ ${t(lang, 'hilo_higher')}`)
-            .setStyle(ButtonStyle.Primary)
-            .setDisabled(higherMult <= 0),
-          new ButtonBuilder()
-            .setCustomId('hilo_lower')
-            .setLabel(lowerMult > 0 ? `⬇️ ${t(lang, 'hilo_lower')} (x${lowerMult.toFixed(2)})` : `⬇️ ${t(lang, 'hilo_lower')}`)
-            .setStyle(ButtonStyle.Primary)
-            .setDisabled(lowerMult <= 0),
-          new ButtonBuilder()
-            .setCustomId('hilo_cashout')
-            .setLabel(canCashout ? `💸 ${t(lang, 'btn_cashout')} $${Math.floor(bet * totalMultiplier).toLocaleString()}` : `💸 ${t(lang, 'btn_cashout')}`)
-            .setStyle(ButtonStyle.Success)
-            .setDisabled(!canCashout),
-        );
+      return new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId('hilo_higher')
+          .setLabel(higherMult > 0 ? `⬆️ ${t(lang, 'hilo_higher')} ×${higherMult.toFixed(2)}` : `⬆️ ${t(lang, 'hilo_higher')}`)
+          .setStyle(ButtonStyle.Primary)
+          .setDisabled(higherMult <= 0),
+        new ButtonBuilder()
+          .setCustomId('hilo_lower')
+          .setLabel(lowerMult > 0 ? `⬇️ ${t(lang, 'hilo_lower')} ×${lowerMult.toFixed(2)}` : `⬇️ ${t(lang, 'hilo_lower')}`)
+          .setStyle(ButtonStyle.Primary)
+          .setDisabled(lowerMult <= 0),
+        new ButtonBuilder()
+          .setCustomId('hilo_cashout')
+          .setLabel(canCashout ? `💸 ${t(lang, 'btn_cashout').replace(/^💸\s*/, '')} ${formatUsd(Math.floor(bet * totalMultiplier))}` : t(lang, 'btn_cashout'))
+          .setStyle(ButtonStyle.Success)
+          .setDisabled(!canCashout),
+      );
     };
 
     try {
-      await interaction.reply({ embeds: [buildGameEmbed()], components: [buildButtons()] });
+      await interaction.reply(await view({
+        kind: 'pending',
+        outcome: playingOutcome(),
+        summary: t(lang, 'hilo_prompt'),
+        components: [buildButtons()],
+      }));
     } catch (error) {
       activeHilo.delete(userId);
       throw error;
@@ -179,6 +197,37 @@ export default {
       time: 120000,
       filter: (i) => i.user.id === userId && i.customId.startsWith('hilo_'),
     });
+
+    const settleWin = async (summary: string, respond: (payload: Awaited<ReturnType<typeof view>>) => Promise<unknown>) => {
+      const winnings = Math.floor(bet * totalMultiplier);
+      await withUserLock(userId, async () => {
+        await client.db.updateMoney(userId, winnings);
+        await client.db.recordGame(userId, 'hilo', bet, winnings, 'win');
+      });
+      const achievements = await client.db.checkAchievements(userId);
+      const newData = await client.db.getUser(userId);
+      const payload = await view({
+        kind: 'win',
+        outcome: settledOutcome({
+          lang,
+          kind: 'win',
+          net: winnings - bet,
+          bet,
+          balance: newData.money,
+          rows: [
+            [t(lang, 'card_mult'), `×${totalMultiplier.toFixed(2)}`],
+            [t(lang, 'card_round'), String(round - 1)],
+          ],
+        }),
+        summary,
+        components: [hiloPlayAgainRow(bet, userId, lang)],
+      });
+      if (achievements.length > 0) {
+        const { formatAchievementNamesInline } = await import('../utils/achievements');
+        payload.embeds[0].setDescription(`${summary}\n${t(lang, 'new_achievements')(formatAchievementNamesInline(achievements)).trim()}`);
+      }
+      await respond(payload);
+    };
 
     const onCollect = async (buttonInteraction: ButtonInteraction) => {
       if (settled) return;
@@ -195,37 +244,10 @@ export default {
       }
 
       if (buttonInteraction.customId === 'hilo_cashout') {
-        const winnings = Math.floor(bet * totalMultiplier);
-        await withUserLock(userId, async () => {
-          await client.db.updateMoney(userId, winnings);
-          await client.db.recordGame(userId, 'hilo', bet, winnings, 'win');
-        });
-        const newAchievements = await client.db.checkAchievements(userId);
-        const newData = await client.db.getUser(userId);
-
-        let extra = t(lang, 'hilo_cashed')(round - 1, formatCard(currentCard), `x${totalMultiplier.toFixed(2)}`);
-        if (newAchievements.length > 0) {
-          extra += t(lang, 'new_achievements')(formatAchievementNamesInline(newAchievements));
-        }
-
-        const embed = gameResultEmbed({
-          title: t(lang, 'hilo_title'),
-          won: true,
-          bet,
-          result: `x${totalMultiplier.toFixed(2)} · $${winnings.toLocaleString()}`,
-          balance: newData.money,
-          extra,
-          lang,
-        });
-
-        const disabledRow = new ActionRowBuilder<ButtonBuilder>()
-          .addComponents(
-            new ButtonBuilder().setCustomId('d1').setLabel(`⬆️ ${t(lang, 'hilo_higher')}`).setStyle(ButtonStyle.Primary).setDisabled(true),
-            new ButtonBuilder().setCustomId('d2').setLabel(`⬇️ ${t(lang, 'hilo_lower')}`).setStyle(ButtonStyle.Primary).setDisabled(true),
-            new ButtonBuilder().setCustomId('d3').setLabel(`💸 ${t(lang, 'btn_cashout')}`).setStyle(ButtonStyle.Success).setDisabled(true),
-          );
-
-        await buttonInteraction.editReply({ embeds: [embed], components: [disabledRow, hiloPlayAgainRow(bet, userId, lang)] });
+        await settleWin(
+          t(lang, 'hilo_cashed')(round - 1, formatCard(currentCard), `x${totalMultiplier.toFixed(2)}`),
+          payload => buttonInteraction.editReply(payload),
+        );
         return;
       }
 
@@ -235,10 +257,6 @@ export default {
       const nextCard = drawCard();
       const multiplierGain = calculateMultiplier(currentCard, direction);
 
-      const correct = direction === 'higher'
-        ? nextCard.rank > currentCard.rank
-        : nextCard.rank < currentCard.rank;
-
       if (multiplierGain <= 0) {
         await buttonInteraction.followUp({
           embeds: [EmbedHelper.warningEmbed(t(lang, 'hilo_title'), t(lang, 'hilo_no_direction'))],
@@ -247,47 +265,44 @@ export default {
         return;
       }
 
+      const correct = direction === 'higher'
+        ? nextCard.rank > currentCard.rank
+        : nextCard.rank < currentCard.rank;
+
       if (correct) {
-        totalMultiplier *= multiplierGain;
-        totalMultiplier = Math.round(totalMultiplier * 100) / 100;
+        totalMultiplier = Math.round(totalMultiplier * multiplierGain * 100) / 100;
         round++;
+        history.push(face(currentCard));
         currentCard = nextCard;
-
-        const embed = buildGameEmbed(
-          `${formatCard(nextCard)} · ${direction === 'higher' ? t(lang, 'hilo_higher') : t(lang, 'hilo_lower')}\n` +
-          `${t(lang, 'hilo_multi')}: **x${totalMultiplier.toFixed(2)}**`,
-        );
-
-        await buttonInteraction.editReply({ embeds: [embed], components: [buildButtons()] });
-      } else {
-        settled = true;
-        collector.stop('lost');
-
-        await withUserLock(userId, () => client.db.recordGame(userId, 'hilo', bet, 0, 'loss'));
-        await client.db.checkAchievements(userId);
-        const newData = await client.db.getUser(userId);
-
-        const embed = gameResultEmbed({
-          title: t(lang, 'hilo_title'),
-          won: false,
-          bet,
-          result: `${t(lang, 'hilo_round')} ${round}`,
-          balance: newData.money,
-          extra:
-            `${formatCard(currentCard)} → ${formatCard(nextCard)}\n` +
-            `${direction === 'higher' ? t(lang, 'hilo_higher') : t(lang, 'hilo_lower')}`,
-          lang,
-        });
-
-        const disabledRow = new ActionRowBuilder<ButtonBuilder>()
-          .addComponents(
-            new ButtonBuilder().setCustomId('d1').setLabel(`⬆️ ${t(lang, 'hilo_higher')}`).setStyle(ButtonStyle.Primary).setDisabled(true),
-            new ButtonBuilder().setCustomId('d2').setLabel(`⬇️ ${t(lang, 'hilo_lower')}`).setStyle(ButtonStyle.Primary).setDisabled(true),
-            new ButtonBuilder().setCustomId('d3').setLabel('❌').setStyle(ButtonStyle.Danger).setDisabled(true),
-          );
-
-        await buttonInteraction.editReply({ embeds: [embed], components: [disabledRow, hiloPlayAgainRow(bet, userId, lang)] });
+        await buttonInteraction.editReply(await view({
+          kind: 'pending',
+          outcome: playingOutcome(),
+          summary: `${formatCard(nextCard)} · ${direction === 'higher' ? t(lang, 'hilo_higher') : t(lang, 'hilo_lower')} · ×${totalMultiplier.toFixed(2)}`,
+          components: [buildButtons()],
+        }));
+        return;
       }
+
+      settled = true;
+      collector.stop('lost');
+      await withUserLock(userId, () => client.db.recordGame(userId, 'hilo', bet, 0, 'loss'));
+      await client.db.checkAchievements(userId);
+      const newData = await client.db.getUser(userId);
+      await buttonInteraction.editReply(await view({
+        kind: 'loss',
+        outcome: settledOutcome({
+          lang,
+          kind: 'loss',
+          net: -bet,
+          bet,
+          balance: newData.money,
+          rows: [[t(lang, 'card_round'), String(round)]],
+        }),
+        summary: `${formatCard(currentCard)} → ${formatCard(nextCard)}`,
+        next: nextCard,
+        direction,
+        components: [hiloPlayAgainRow(bet, userId, lang)],
+      }));
     };
 
     let collectQueue: Promise<void> = Promise.resolve();
@@ -302,39 +317,19 @@ export default {
         await collectQueue;
         if (settled) return;
         settled = true;
-        if (reason === 'time' && totalMultiplier > 1.0) {
-          const winnings = Math.floor(bet * totalMultiplier);
-          await withUserLock(userId, async () => {
-            await client.db.updateMoney(userId, winnings);
-            await client.db.recordGame(userId, 'hilo', bet, winnings, 'win');
-          });
-          const newData = await client.db.getUser(userId);
-
-          const embed = gameResultEmbed({
-            title: t(lang, 'hilo_title'),
-            won: true,
-            bet,
-            result: `x${totalMultiplier.toFixed(2)} · $${winnings.toLocaleString()}`,
-            balance: newData.money,
-            extra: t(lang, 'hilo_timeout_cash'),
-            lang,
-          });
-          try { await interaction.editReply({ embeds: [embed], components: [hiloPlayAgainRow(bet, userId, lang)] }); } catch {}
-        } else if (reason === 'time') {
-          await withUserLock(userId, () => client.db.recordGame(userId, 'hilo', bet, 0, 'loss'));
-          const newData = await client.db.getUser(userId);
-
-          const embed = gameResultEmbed({
-            title: t(lang, 'hilo_title'),
-            won: false,
-            bet,
-            result: t(lang, 'hilo_timeout_loss')(bet),
-            balance: newData.money,
-            extra: t(lang, 'hilo_timeout_loss')(bet),
-            lang,
-          });
-          try { await interaction.editReply({ embeds: [embed], components: [hiloPlayAgainRow(bet, userId, lang)] }); } catch {}
+        if (reason !== 'time') return;
+        if (totalMultiplier > 1.0) {
+          await settleWin(t(lang, 'hilo_timeout_cash'), payload => interaction.editReply(payload)).catch(() => {});
+          return;
         }
+        await withUserLock(userId, () => client.db.recordGame(userId, 'hilo', bet, 0, 'loss'));
+        const newData = await client.db.getUser(userId);
+        await interaction.editReply(await view({
+          kind: 'loss',
+          outcome: settledOutcome({ lang, kind: 'loss', net: -bet, bet, balance: newData.money }),
+          summary: t(lang, 'hilo_timeout_loss')(bet),
+          components: [hiloPlayAgainRow(bet, userId, lang)],
+        })).catch(() => {});
       } finally {
         activeHilo.delete(userId);
       }

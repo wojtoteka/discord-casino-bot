@@ -6,6 +6,9 @@ import { formatAchievementNamesLines } from '../utils/achievements';
 import { getUserLang, slashLocales, t } from '../i18n';
 import { listLine } from '../utils/embeds';
 import { isUnknownInteractionError } from '../utils/interactions';
+import { DAILY } from '../config/constants';
+import { imageAttachment, renderDailyCard, safeRender } from '../render';
+import { navRow } from '../utils/playerNav';
 
 function getTimeUntilWarsawMidnight(): { hours: number; minutes: number } {
   const parts = new Intl.DateTimeFormat('pl-PL', {
@@ -73,22 +76,37 @@ export default {
         achievementText = t(lang, 'new_achievements')(formatAchievementNamesLines(newAchievements));
       }
 
+      const userData = await client.db.getUser(userId);
+      const boost = 1 + (result.vipBoost ?? 0) / 100;
+      const ladder = Array.from({ length: DAILY.maxStreakDays }, (_, i) =>
+        Math.floor((DAILY.baseReward + (i + 1) * DAILY.streakBonus) * boost));
+      const image = await safeRender('daily', () => renderDailyCard({
+        reward: result.reward,
+        streak: result.streak,
+        ladder,
+        eventPercent: result.bonusPercent,
+        balance: userData.money,
+      }, lang));
+
       const embed = EmbedHelper.successEmbed(
         t(lang, 'daily_claimed'),
         [
           t(lang, 'daily_reward')(result.reward),
           result.bonusPercent ? t(lang, 'daily_event_bonus')(result.bonusPercent) : '',
-          '',
-          listLine(t(lang, 'daily_streak')(result.streak).replace(/\*\*/g, ''), String(result.streak)),
+          result.vipBoost ? t(lang, 'daily_vip_bonus')(result.vipBoost) : '',
+          image ? '' : listLine(t(lang, 'daily_streak')(result.streak).replace(/\*\*/g, ''), String(result.streak)),
           result.streak < 7 ? t(lang, 'daily_streak_tip') : t(lang, 'daily_streak_max'),
           achievementText,
         ].filter(Boolean).join('\n'),
       );
-
-      const userData = await client.db.getUser(userId);
       embed.setFooter({ text: t(lang, 'daily_footer')(userData.money) });
+      if (image) embed.setImage('attachment://daily.webp');
 
-      await interaction.editReply({ embeds: [embed] });
+      await interaction.editReply({
+        embeds: [embed],
+        files: image ? [imageAttachment(image, 'daily')] : [],
+        components: [navRow(userId, userId, lang, ['kasyno', 'questy', 'vip', 'jackpot'])],
+      });
     } catch (error) {
       if (isUnknownInteractionError(error)) return;
       console.error('Błąd daily:', error);

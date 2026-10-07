@@ -4,9 +4,10 @@ import { ChatInputCommandInteraction } from 'discord.js';
 import { CasinoBot } from '../index';
 import { GAMES } from '../config/constants';
 import { EmbedHelper, GameHelper } from '../utils/helpers';
-import { formatAchievementNamesInline } from '../utils/achievements';
 import { withOwner } from '../utils/components';
-import { formatUsd, gameResultEmbed, pendingEmbed, pendingList, playAgainRow } from '../utils/embeds';
+import { formatUsd, playAgainRow } from '../utils/embeds';
+import { gameView, pendingOutcome, settledOutcome, symbolLabel } from '../utils/gameView';
+import { renderLimbo, safeRender } from '../render';
 import { InsufficientFundsError } from '../database/Database';
 import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
 import { withUserLock } from '../utils/moneyLock';
@@ -146,33 +147,23 @@ export default {
     const won = rolled >= target;
     const payout = Math.floor(bet * target);
 
-    await interaction.editReply({
-      embeds: [pendingEmbed(
-        t(lang, 'limbo_title'),
-        pendingList(
-          t(lang, 'limbo_rolling'),
-          [
-            [t(lang, 'label_bet'), formatUsd(bet)],
-            [t(lang, 'limbo_target'), formatMult(target)],
-          ],
-        ),
-      )],
-    });
-    await sleep(450);
-
-    await interaction.editReply({
-      embeds: [pendingEmbed(
-        t(lang, 'limbo_title'),
-        pendingList(
-          t(lang, 'limbo_checking'),
-          [
-            [t(lang, 'label_bet'), formatUsd(bet)],
-            [t(lang, 'limbo_target'), formatMult(target)],
-          ],
-        ),
-      )],
-    });
-    await sleep(400);
+    await interaction.editReply(gameView({
+      lang,
+      title: t(lang, 'limbo_title'),
+      kind: 'pending',
+      image: await safeRender('limbo', () => renderLimbo({
+        target,
+        rolled: null,
+        targetLabel: t(lang, 'card_target')(formatMult(target)),
+        outcome: pendingOutcome(t(lang, 'card_limbo_roll'), [
+          [t(lang, 'label_bet'), formatUsd(bet)],
+          [t(lang, 'limbo_target'), formatMult(target)],
+        ]),
+      })),
+      imageName: 'limbo',
+      summary: t(lang, 'limbo_rolling'),
+    }));
+    await sleep(800);
 
     if (won) {
       await withUserLock(userId, async () => {
@@ -190,16 +181,6 @@ export default {
     const newAchievements = await client.db.checkAchievements(userId);
     const newData = await client.db.getUser(userId);
 
-    const extraParts: string[] = [];
-    extraParts.push(
-      won
-        ? t(lang, 'limbo_payout')(formatUsd(payout))
-        : t(lang, 'limbo_miss'),
-    );
-    if (newAchievements.length > 0) {
-      extraParts.push(t(lang, 'new_achievements')(formatAchievementNamesInline(newAchievements)).trim());
-    }
-
     const encodedTarget = encodeTarget(target);
     const row = playAgainRow({
       customIdPlayAgain: withOwner(`play_again:limbo:${bet}:${encodedTarget}`, userId),
@@ -208,18 +189,34 @@ export default {
       balanceLabel: t(lang, 'btn_balance'),
     });
 
-    const embed = gameResultEmbed({
+    const kind = won ? 'win' : 'loss';
+    const image = await safeRender('limbo', () => renderLimbo({
+      target,
+      rolled,
+      targetLabel: t(lang, 'card_target')(formatMult(target)),
+      outcome: settledOutcome({
+        lang,
+        kind,
+        net: won ? payout - bet : -bet,
+        bet,
+        balance: newData.money,
+        rows: [
+          [t(lang, 'limbo_target'), formatMult(target)],
+          [t(lang, 'card_result'), formatMult(rolled)],
+        ],
+      }),
+    }));
+    await interaction.editReply(gameView({
+      lang,
       title: t(lang, 'limbo_title'),
-      won,
-      bet,
-      result: won
+      kind,
+      image,
+      imageName: 'limbo',
+      summary: won
         ? t(lang, 'limbo_hit')(formatMult(rolled), formatMult(target))
         : t(lang, 'limbo_miss_result')(formatMult(rolled), formatMult(target)),
-      balance: newData.money,
-      extra: extraParts.join('\n'),
-      lang,
-    });
-
-    await interaction.editReply({ embeds: [embed], components: [row] });
+      achievements: newAchievements,
+      components: [row],
+    }));
   },
 };

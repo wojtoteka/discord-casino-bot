@@ -3,12 +3,16 @@ import { CasinoBot } from '../index';
 import { startVoteWebhook } from '../utils/voteWebhook';
 import { startVotePoller } from '../utils/votePoller';
 import { registerSlashCommands } from '../utils/slashDeploy';
+import { refreshCommandIds } from '../utils/commandMentions';
+import { startScheduler } from '../utils/scheduler';
+import { cleanupDropsOnStartup } from '../utils/drops';
+import { refundLiveCrashOnStartup } from '../utils/liveCrash';
 
 const STATUSES = [
-  { name: '🎰 RoyalCasino | /pomoc', type: ActivityType.Playing },
-  { name: '🃏 Blackjack & Poker', type: ActivityType.Playing },
-  { name: '📈 Crash Game', type: ActivityType.Watching },
-  { name: `🎲 /pomoc for commands`, type: ActivityType.Listening },
+  // Only command names that are identical in every client language.
+  { name: '📈 /crash-live · {guilds} servers', type: ActivityType.Playing },
+  { name: '🎟️ Royal Jackpot · /jackpot', type: ActivityType.Watching },
+  { name: '🃏 /blackjack · /daily · /vip', type: ActivityType.Playing },
 ];
 
 async function runStartupHealthCheck(client: CasinoBot): Promise<void> {
@@ -64,12 +68,17 @@ export default {
     void registerSlashCommands(client, client.commands, {
       label: 'ROYALCASINO',
       kind: 'casino',
-    });
+    }).then(() => refreshCommandIds(client));
+
+    // Clean up anything a previous process left mid-flight, then start timers.
+    void refundLiveCrashOnStartup(client);
+    void cleanupDropsOnStartup(client);
+    startScheduler(client);
 
     // Set initial status
     let statusIndex = 0;
     client.user?.setPresence({
-      activities: [{ name: STATUSES[0].name, type: STATUSES[0].type }],
+      activities: [{ name: STATUSES[0].name.replace('{guilds}', client.guilds.cache.size.toString()), type: STATUSES[0].type }],
       status: 'online'
     });
 

@@ -1,22 +1,38 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
-import { ChatInputCommandInteraction, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { ChatInputCommandInteraction, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
 import { CasinoBot } from '../index';
 import { EmbedHelper } from '../utils/helpers';
 import { withOwner } from '../utils/components';
-import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
+import { getUserLang, slashLocales, slashNameLocales, t, type Lang } from '../i18n';
+import { brandTitle, formatUsd } from '../utils/embeds';
+import { COLORS } from '../config/constants';
+import type { DailyQuest } from '../database/Database';
+import { imageAttachment, renderQuests, safeRender } from '../render';
 
-function progressBar(current: number, target: number, length = 10): string {
-  const pct    = Math.min(current / target, 1);
-  const filled = Math.floor(pct * length);
-  return '█'.repeat(filled) + '░'.repeat(length - filled);
+/** Quest labels are built from type + target, so every player reads them in their own language. */
+export function questLabel(lang: Lang, quest: Pick<DailyQuest, 'quest_type' | 'target' | 'quest_label'>): string {
+  const n = quest.target;
+  switch (quest.quest_type) {
+    case 'play_games': return t(lang, 'qlabel_play_games')(n);
+    case 'win_games': return t(lang, 'qlabel_win_games')(n);
+    case 'wager': return t(lang, 'qlabel_wager')(formatUsd(n));
+    case 'win_blackjack': return t(lang, 'qlabel_win_blackjack')(n);
+    case 'win_coinflip': return t(lang, 'qlabel_win_coinflip')(n);
+    case 'play_slots': return t(lang, 'qlabel_play_slots')(n);
+    case 'play_zdrapka': return t(lang, 'qlabel_play_zdrapka')(n);
+    case 'play_kolo': return t(lang, 'qlabel_play_kolo')(n);
+    case 'play_keno': return t(lang, 'qlabel_play_keno')(n);
+    case 'daily_streak': return t(lang, 'qlabel_daily_streak');
+    default: return quest.quest_label;
+  }
 }
 
 export default {
   data: new SlashCommandBuilder()
     .setName('questy')
     .setNameLocalizations(slashNameLocales('quests'))
-    .setDescription('🎯 Sprawdź swoje dzienne questy i odbierz nagrody!')
-    .setDescriptionLocalizations(slashLocales('🎯 Check daily quests and claim rewards')),
+    .setDescription('🎯 Dzienne questy i nagrody do odebrania')
+    .setDescriptionLocalizations(slashLocales('🎯 Daily quests and rewards to claim')),
 
   async execute(interaction: ChatInputCommandInteraction) {
     const client = interaction.client as CasinoBot;
@@ -27,78 +43,76 @@ export default {
 
     try {
       const quests = await client.db.getDailyQuests(userId);
-
       if (quests.length === 0) {
-        const embed = EmbedHelper.infoEmbed(
-          t(lang, 'quests_title'),
-          t(lang, 'quests_none'),
-        );
-        await interaction.editReply({ embeds: [embed] });
+        await interaction.editReply({ embeds: [EmbedHelper.infoEmbed(t(lang, 'quests_title'), t(lang, 'quests_none'))] });
         return;
       }
 
       const completedCount = quests.filter(q => q.completed).length;
-      const allDone        = completedCount === quests.length;
+      const rewardText = (q: DailyQuest) => `${formatUsd(Number(q.reward_money) || 0)} · ${Number(q.reward_xp) || 0} XP`;
+      const image = await safeRender('quests', () => renderQuests({
+        title: t(lang, 'quests_card_title'),
+        subtitle: t(lang, 'quests_card_sub')(completedCount, quests.length),
+        stateLabels: { ready: t(lang, 'quests_card_ready'), claimed: t(lang, 'quests_card_claimed') },
+        rows: quests.map(q => ({
+          label: questLabel(lang, q),
+          progress: q.progress,
+          target: q.target,
+          reward: rewardText(q),
+          // reward_money > 0 on a completed quest means it is still waiting to be claimed.
+          state: q.completed ? (Number(q.reward_money) > 0 || Number(q.reward_xp) > 0 ? 'ready' : 'claimed') : 'open',
+        })),
+      }));
 
-      const embed = EmbedHelper.goldEmbed(
-        t(lang, 'quests_title'),
-        allDone
-          ? t(lang, 'quests_completed_all')
-          : `${t(lang, 'quests_resets')}`,
-      );
-
-      for (const quest of quests) {
-        const bar     = progressBar(quest.progress, quest.target);
-        const progStr = t(lang, 'quests_progress')(quest.progress, quest.target);
-        const done    = quest.completed;
-
-        // Check if reward is still available (reward_money > 0 means unclaimed)
-        const canClaim = done && quest.reward_money > 0;
-
-        embed.addFields({
-          name: `${done ? '✅' : '🎯'} ${quest.quest_label}`,
-          value:
-            `${bar} ${progStr}\n` +
-            (done
-              ? (canClaim ? `**${t(lang, 'quests_reward')(quest.reward_money, quest.reward_xp)}** ${t(lang, 'quests_claim_hint')}` : t(lang, 'quests_completed'))
-              : `${t(lang, 'quests_reward_prefix')} ${t(lang, 'quests_reward')(quest.reward_money, quest.reward_xp)}`),
-          inline: false,
-        });
-      }
-
-      embed.setFooter({ text: `${t(lang, 'quests_title')} • ${completedCount}/${quests.length} ✅` });
-
-      // Build claim buttons for completed quests with unclaimed rewards
-      const claimable = quests.filter(q => q.completed && q.reward_money > 0);
-      const rows: ActionRowBuilder<ButtonBuilder>[] = [];
-
-      if (claimable.length > 0) {
-        const row = new ActionRowBuilder<ButtonBuilder>();
-        for (const quest of claimable.slice(0, 5)) {
-          row.addComponents(
-            new ButtonBuilder()
-              .setCustomId(withOwner(`quest_claim:${quest.id}`, userId))
-              .setLabel(`🎁 ${quest.quest_label.slice(0, 30)}`)
-              .setStyle(ButtonStyle.Success),
-          );
+      const embed = new EmbedBuilder()
+        .setTitle(brandTitle(t(lang, 'quests_title')))
+        .setColor(COLORS.gold)
+        .setDescription(completedCount === quests.length ? t(lang, 'quests_completed_all') : t(lang, 'quests_resets'));
+      if (image) {
+        embed.setImage('attachment://quests.webp');
+      } else {
+        for (const quest of quests) {
+          embed.addFields({
+            name: `${quest.completed ? '✅' : '🎯'} ${questLabel(lang, quest)}`,
+            value: `${t(lang, 'quests_progress')(quest.progress, quest.target)} · ${rewardText(quest)}`,
+          });
         }
-        rows.push(row);
       }
 
-      rows.push(
-        new ActionRowBuilder<ButtonBuilder>().addComponents(
-          new ButtonBuilder()
-            .setCustomId(withOwner(`nav:balance:${userId}`, userId))
-            .setLabel(t(lang, 'btn_balance'))
-            .setStyle(ButtonStyle.Secondary),
-        ),
-      );
+      const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+      const claimable = quests
+        .map((q, index) => ({ q, index }))
+        .filter(({ q }) => q.completed && (Number(q.reward_money) > 0 || Number(q.reward_xp) > 0));
+      if (claimable.length > 0) {
+        rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+          claimable.slice(0, 5).map(({ q, index }) =>
+            new ButtonBuilder()
+              .setCustomId(withOwner(`quest_claim:${q.id}`, userId))
+              .setEmoji('🎁')
+              .setLabel(t(lang, 'quests_btn_claim')(index + 1))
+              .setStyle(ButtonStyle.Success),
+          ),
+        ));
+      }
+      rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(withOwner(`nav:balance:${userId}`, userId))
+          .setLabel(t(lang, 'btn_balance'))
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(withOwner(`nav:kasyno:${userId}`, userId))
+          .setLabel(t(lang, 'btn_casino'))
+          .setStyle(ButtonStyle.Secondary),
+      ));
 
-      await interaction.editReply({ embeds: [embed], components: rows });
+      await interaction.editReply({
+        embeds: [embed],
+        components: rows,
+        files: image ? [imageAttachment(image, 'quests')] : [],
+      });
     } catch (error) {
       console.error('Błąd questów:', error);
-      const embed = EmbedHelper.errorEmbed('❌ Błąd', t(lang, 'error_generic'));
-      await interaction.editReply({ embeds: [embed] });
+      await interaction.editReply({ embeds: [EmbedHelper.errorEmbed(t(lang, 'error_title'), t(lang, 'error_generic'))] });
     }
   },
 };

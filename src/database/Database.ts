@@ -1,8 +1,11 @@
 import mysql from 'mysql2/promise';
+import { randomInt } from 'crypto';
 import { EventEmitter } from 'events';
 import { withUserLock, withUserLocks } from '../utils/moneyLock';
 import { getRequiredXP, getWarsawDateKey } from '../utils/helpers';
 import { ACHIEVEMENT_NAMES } from '../utils/achievements';
+import { currentGuildId } from '../utils/requestContext';
+import { getVipTier, rakebackFor } from '../utils/vip';
 
 export class InsufficientFundsError extends Error {
   constructor(
@@ -68,6 +71,18 @@ export interface UserData {
   max_bet?: number;
   /** Unix ms; 0 = no expiry (should not happen - limits are always timed). */
   max_bet_until?: number;
+  /** Profile card theme id (render/theme.ts). */
+  profile_theme?: string;
+  /** JSON array of theme ids the player bought. */
+  owned_themes?: string;
+  /** VIP cashback waiting to be claimed with /vip. */
+  rakeback_balance?: number;
+  rakeback_total?: number;
+  /** 1 = DM a reminder when the next top.gg vote is available. */
+  vote_reminder?: number;
+  vote_reminded_at?: number;
+  /** 1 = the player has seen the first-game welcome. */
+  tutorial_done?: number;
 }
 
 export interface GameHistoryRow {
@@ -178,6 +193,45 @@ export interface GuildSettings {
   casino_channel_id: string | null;
   duels_enabled: number;
   updated_at: number;
+  /** Server default language for players who never picked one. Null = Polish. */
+  language: 'pl' | 'en' | null;
+  /** Drops are opt-in: an admin must enable them and pick the channel. */
+  drops_enabled: number;
+  drops_channel_id: string | null;
+  /** Set by the bot owner to stop drops on a server (abuse). */
+  drops_banned: number;
+  /** Opt-in channel for big win and jackpot announcements. */
+  announce_channel_id: string | null;
+  /** Unix ms when the bot joined (0 = before tracking). */
+  joined_at: number;
+  /** Missing-permission reminders: last sent (Unix ms) and how many so far. */
+  perms_notified_at: number;
+  perms_notified_count: number;
+}
+
+export interface JackpotRound {
+  id: number;
+  status: 'open' | 'drawing' | 'drawn';
+  pot: number;
+  total_tickets: number;
+  draw_at: number;
+  winner_id: string | null;
+  winner_tickets: number;
+  drawn_at: number;
+}
+
+function normalizeJackpotRound(row: any): JackpotRound {
+  const status = String(row?.status ?? 'open');
+  return {
+    id: Number(row?.id) || 0,
+    status: status === 'drawn' || status === 'drawing' ? status : 'open',
+    pot: Number(row?.pot) || 0,
+    total_tickets: Number(row?.total_tickets) || 0,
+    draw_at: Number(row?.draw_at) || 0,
+    winner_id: row?.winner_id ? String(row.winner_id) : null,
+    winner_tickets: Number(row?.winner_tickets) || 0,
+    drawn_at: Number(row?.drawn_at) || 0,
+  };
 }
 
 export interface DailyQuest {
@@ -214,7 +268,7 @@ export interface VoteRecord {
 export interface GameEvents {
   levelUp: { userId: string; newLevel: number };
   achievementUnlocked: { userId: string; achievementIds: string[] };
-  bigWin: { userId: string; game: string; amount: number };
+  bigWin: { userId: string; game: string; amount: number; bet: number; guildId: string | null };
   newUser: { userId: string };
   adminAlert: AdminAlertPayload;
 }
@@ -234,18 +288,51 @@ const BOT_EVENT_TYPES = new Set<BotEventType>(['daily_bonus_percent', 'xp_multip
 const BOT_CACHE_TTL_MS = 8_000;
 
 function defaultGuildSettings(guildId: string): GuildSettings {
-  return { guild_id: guildId, casino_channel_id: null, duels_enabled: 1, updated_at: 0 };
+  return {
+    guild_id: guildId,
+    casino_channel_id: null,
+    duels_enabled: 1,
+    updated_at: 0,
+    language: null,
+    drops_enabled: 0,
+    drops_channel_id: null,
+    drops_banned: 0,
+    announce_channel_id: null,
+    joined_at: 0,
+    perms_notified_at: 0,
+    perms_notified_count: 0,
+  };
+}
+
+function snowflakeOrNull(value: unknown): string | null {
+  if (value == null) return null;
+  const raw = String(value);
+  return raw && raw !== '0' ? raw : null;
 }
 
 function normalizeGuildSettings(row: Partial<GuildSettings> & { guild_id: string }): GuildSettings {
-  const channel = row.casino_channel_id ? String(row.casino_channel_id) : null;
+  const lang = String(row.language ?? '').toLowerCase();
   return {
     guild_id: String(row.guild_id),
-    casino_channel_id: channel && channel !== '0' ? channel : null,
+    casino_channel_id: snowflakeOrNull(row.casino_channel_id),
     duels_enabled: Number(row.duels_enabled) === 0 ? 0 : 1,
     updated_at: Number(row.updated_at) || 0,
+    language: lang === 'pl' || lang === 'en' ? lang : null,
+    drops_enabled: Number(row.drops_enabled) === 1 ? 1 : 0,
+    drops_channel_id: snowflakeOrNull(row.drops_channel_id),
+    drops_banned: Number(row.drops_banned) === 1 ? 1 : 0,
+    announce_channel_id: snowflakeOrNull(row.announce_channel_id),
+    joined_at: Number(row.joined_at) || 0,
+    perms_notified_at: Number(row.perms_notified_at) || 0,
+    perms_notified_count: Number(row.perms_notified_count) || 0,
   };
 }
+
+/** Columns `updateGuildSettings` may write. Keeps raw SQL keys out of callers. */
+const GUILD_SETTING_COLUMNS = new Set([
+  'casino_channel_id', 'duels_enabled', 'language', 'drops_enabled', 'drops_channel_id',
+  'drops_banned', 'announce_channel_id', 'joined_at', 'perms_notified_at', 'perms_notified_count',
+]);
 
 function normalizeReportType(value: unknown): ReportType {
   const raw = String(value ?? '').trim().toLowerCase();
@@ -322,6 +409,19 @@ export class Database extends EventEmitter {
       is_frozen: Number(data.is_frozen) === 1,
       max_bet: Number(data.max_bet) || 0,
       max_bet_until: Number(data.max_bet_until) || 0,
+      total_games: Number(data.total_games) || 0,
+      total_wins: Number(data.total_wins) || 0,
+      total_losses: Number(data.total_losses) || 0,
+      biggest_win: Number(data.biggest_win) || 0,
+      total_wagered: Number(data.total_wagered) || 0,
+      daily_streak: Number(data.daily_streak) || 0,
+      profile_theme: data.profile_theme ? String(data.profile_theme) : 'emerald',
+      owned_themes: data.owned_themes ? String(data.owned_themes) : '[]',
+      rakeback_balance: Number(data.rakeback_balance) || 0,
+      rakeback_total: Number(data.rakeback_total) || 0,
+      vote_reminder: Number(data.vote_reminder) === 1 ? 1 : 0,
+      vote_reminded_at: Number(data.vote_reminded_at) || 0,
+      tutorial_done: Number(data.tutorial_done) === 1 ? 1 : 0,
     };
   }
 
@@ -567,6 +667,8 @@ export class Database extends EventEmitter {
       `);
 
       console.log('✅ Tabele v3.0 gotowe (daily_quests, mines_sessions, votes, admin_audit, reports, guild_settings, user_notes, user_watch, payouts, bot_settings, bot_events)');
+
+      await this.initializeV4();
     } catch (error) {
       console.error('❌ Błąd połączenia z bazą danych:', error);
       throw error;
@@ -668,8 +770,9 @@ export class Database extends EventEmitter {
         language_set: 0,
         duel_enabled: 1,
       };
-      this.setCachedUser(userId, newUser);
-      return newUser;
+      const normalized = this.normalizeUser(newUser);
+      this.setCachedUser(userId, normalized);
+      return normalized;
     } catch (error: any) {
       // If user already exists, fetch and return
       if (error.code === 'ER_DUP_ENTRY') {
@@ -1038,6 +1141,9 @@ export class Database extends EventEmitter {
       try { await this.pool.execute('DELETE FROM user_notes WHERE user_id = ?', [userId]); } catch {}
       try { await this.pool.execute('DELETE FROM user_watch WHERE user_id = ?', [userId]); } catch {}
       try { await this.pool.execute('DELETE FROM payouts WHERE user_id = ?', [userId]); } catch {}
+      try { await this.pool.execute('DELETE FROM live_bets WHERE user_id = ?', [userId]); } catch {}
+      try { await this.pool.execute('DELETE FROM jackpot_tickets WHERE user_id = ?', [userId]); } catch {}
+      try { await this.pool.execute('UPDATE drops SET claimer_id = NULL WHERE claimer_id = ?', [userId]); } catch {}
       this.invalidateWatchCache();
       await this.pool.execute('DELETE FROM users WHERE user_id = ?', [userId]);
       this.invalidateUser(userId);
@@ -1178,6 +1284,7 @@ export class Database extends EventEmitter {
     reward: number;
     canClaim: boolean;
     bonusPercent?: number;
+    vipBoost?: number;
   }> {
     return withUserLock(userId, async () => {
       try {
@@ -1212,9 +1319,11 @@ export class Database extends EventEmitter {
           }
         }
 
-        // Calculate reward (base 500 + 100 per streak day, max 7 days)
+        // Calculate reward (base 500 + 100 per streak day, max 7 days), then VIP boost.
         const streakBonus = Math.min(newStreak, 7);
         let reward = 500 + (streakBonus * 100);
+        const vipBoost = getVipTier(Number(user.total_wagered) || 0).dailyBoost;
+        if (vipBoost > 0) reward = Math.floor(reward * (1 + vipBoost / 100));
         let bonusPercent: number | undefined;
         const dailyEvent = await this.getActiveBotEvent('daily_bonus_percent');
         if (dailyEvent && dailyEvent.value !== 0) {
@@ -1234,7 +1343,7 @@ export class Database extends EventEmitter {
 
         await this.updateQuestProgress(userId, { daily_streak: 1 });
 
-        return { streak: newStreak, reward, canClaim: true, bonusPercent };
+        return { streak: newStreak, reward, canClaim: true, bonusPercent, vipBoost: vipBoost || undefined };
       } catch (error) {
         console.error('Błąd daily:', error);
         throw error;
@@ -1254,6 +1363,14 @@ export class Database extends EventEmitter {
     try {
       const netProfit = winAmount - betAmount;
       const trackMoney = options?.trackMoneyStats !== false;
+      const guildId = currentGuildId();
+
+      // Cashback is priced off the tier the player held when the bet was placed.
+      let rakeback = 0;
+      if (trackMoney) {
+        const before = await this.getUser(userId).catch(() => null);
+        rakeback = rakebackFor(gameType, betAmount, Number(before?.total_wagered) || 0);
+      }
 
       this.invalidateUser(userId);
       if (trackMoney) {
@@ -1263,9 +1380,10 @@ export class Database extends EventEmitter {
             total_wins = total_wins + ?,
             total_losses = total_losses + ?,
             biggest_win = GREATEST(COALESCE(biggest_win, 0), ?),
-            total_wagered = COALESCE(total_wagered, 0) + ?
+            total_wagered = COALESCE(total_wagered, 0) + ?,
+            rakeback_balance = COALESCE(rakeback_balance, 0) + ?
           WHERE user_id = ?`,
-          [result === 'win' ? 1 : 0, result === 'loss' ? 1 : 0, netProfit > 0 ? netProfit : 0, betAmount, userId],
+          [result === 'win' ? 1 : 0, result === 'loss' ? 1 : 0, netProfit > 0 ? netProfit : 0, betAmount, rakeback, userId],
         );
       } else {
         await this.pool.execute(
@@ -1279,15 +1397,15 @@ export class Database extends EventEmitter {
       }
 
       await this.pool.execute(
-        'INSERT INTO game_history (user_id, game_type, bet_amount, win_amount, result, played_at) VALUES (?, ?, ?, ?, ?, ?)',
-        [userId, gameType, trackMoney ? betAmount : 0, trackMoney ? winAmount : 0, result, Date.now()],
+        'INSERT INTO game_history (user_id, game_type, bet_amount, win_amount, result, played_at, guild_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [userId, gameType, trackMoney ? betAmount : 0, trackMoney ? winAmount : 0, result, Date.now(), guildId],
       );
 
       const xpGain = result === 'win' ? 15 : 10;
       const xpResult = await this.addXP(userId, xpGain);
 
       if (trackMoney && netProfit >= 5000) {
-        this.emit('bigWin', { userId, game: gameType, amount: netProfit });
+        this.emit('bigWin', { userId, game: gameType, amount: netProfit, bet: betAmount, guildId });
       }
       if (trackMoney) {
         void this.maybeEmitAdminGameAlert(userId, gameType, betAmount, winAmount, result);
@@ -1840,6 +1958,13 @@ export class Database extends EventEmitter {
     return toBotLang(user.language);
   }
 
+  /** The player's own choice, or null when they never picked one (server default applies). */
+  public async getUserLanguagePreference(userId: string): Promise<'pl' | 'en' | null> {
+    const user = await this.getUser(userId);
+    if (Number(user.language_set) !== 1) return null;
+    return toBotLang(user.language);
+  }
+
   public async setUserLanguage(userId: string, lang: 'pl' | 'en'): Promise<void> {
     const next = toBotLang(lang);
     await this.getUser(userId);
@@ -2107,7 +2232,7 @@ export class Database extends EventEmitter {
     const fallback = defaultGuildSettings(id);
     try {
       const [rows] = await this.pool.execute(
-        'SELECT guild_id, casino_channel_id, duels_enabled, updated_at FROM guild_settings WHERE guild_id = ? LIMIT 1',
+        'SELECT * FROM guild_settings WHERE guild_id = ? LIMIT 1',
         [id],
       );
       const row = (rows as any[])[0];
@@ -2651,6 +2776,620 @@ export class Database extends EventEmitter {
       return Number((rows as any[])[0]?.cnt) || 0;
     } catch {
       return 0;
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // v4: servers, drops, jackpot, live crash, VIP, shop
+  // ════════════════════════════════════════════════════════════
+
+  private async initializeV4(): Promise<void> {
+    const tryExec = async (sql: string) => {
+      try { await this.pool.execute(sql); } catch {}
+    };
+
+    await tryExec(`ALTER TABLE game_history ADD COLUMN guild_id VARCHAR(20) NULL`);
+    await tryExec(`ALTER TABLE game_history ADD INDEX idx_history_guild (guild_id, played_at)`);
+    await tryExec(`ALTER TABLE game_history ADD INDEX idx_history_played (played_at)`);
+
+    await tryExec(`ALTER TABLE guild_settings ADD COLUMN language VARCHAR(4) NULL`);
+    await tryExec(`ALTER TABLE guild_settings ADD COLUMN drops_enabled TINYINT NOT NULL DEFAULT 0`);
+    await tryExec(`ALTER TABLE guild_settings ADD COLUMN drops_channel_id VARCHAR(20) NULL`);
+    await tryExec(`ALTER TABLE guild_settings ADD COLUMN drops_banned TINYINT NOT NULL DEFAULT 0`);
+    await tryExec(`ALTER TABLE guild_settings ADD COLUMN announce_channel_id VARCHAR(20) NULL`);
+    await tryExec(`ALTER TABLE guild_settings ADD COLUMN joined_at BIGINT NOT NULL DEFAULT 0`);
+    await tryExec(`ALTER TABLE guild_settings ADD COLUMN perms_notified_at BIGINT NOT NULL DEFAULT 0`);
+    await tryExec(`ALTER TABLE guild_settings ADD COLUMN perms_notified_count INT NOT NULL DEFAULT 0`);
+
+    await tryExec(`ALTER TABLE users ADD COLUMN profile_theme VARCHAR(20) NOT NULL DEFAULT 'emerald'`);
+    await tryExec(`ALTER TABLE users ADD COLUMN owned_themes TEXT NULL`);
+    await tryExec(`ALTER TABLE users ADD COLUMN rakeback_balance BIGINT NOT NULL DEFAULT 0`);
+    await tryExec(`ALTER TABLE users ADD COLUMN rakeback_total BIGINT NOT NULL DEFAULT 0`);
+    await tryExec(`ALTER TABLE users ADD COLUMN vote_reminder TINYINT NOT NULL DEFAULT 0`);
+    await tryExec(`ALTER TABLE users ADD COLUMN vote_reminded_at BIGINT NOT NULL DEFAULT 0`);
+    await tryExec(`ALTER TABLE users ADD COLUMN tutorial_done TINYINT NOT NULL DEFAULT 0`);
+
+    await this.pool.execute(`
+      CREATE TABLE IF NOT EXISTS drops (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        guild_id VARCHAR(20) NOT NULL,
+        channel_id VARCHAR(20) NOT NULL,
+        message_id VARCHAR(20) NULL,
+        amount BIGINT NOT NULL,
+        suit VARCHAR(10) NOT NULL,
+        status VARCHAR(10) NOT NULL DEFAULT 'open',
+        claimer_id VARCHAR(20) NULL,
+        created_at BIGINT NOT NULL,
+        claimed_at BIGINT NOT NULL DEFAULT 0,
+        INDEX idx_drops_guild (guild_id, created_at),
+        INDEX idx_drops_claimer (claimer_id, claimed_at),
+        INDEX idx_drops_status (status, created_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    await this.pool.execute(`
+      CREATE TABLE IF NOT EXISTS jackpot_rounds (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        status VARCHAR(10) NOT NULL DEFAULT 'open',
+        pot BIGINT NOT NULL DEFAULT 0,
+        total_tickets INT NOT NULL DEFAULT 0,
+        draw_at BIGINT NOT NULL,
+        winner_id VARCHAR(20) NULL,
+        winner_tickets INT NOT NULL DEFAULT 0,
+        drawn_at BIGINT NOT NULL DEFAULT 0,
+        created_at BIGINT NOT NULL,
+        INDEX idx_jackpot_status (status, draw_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    await this.pool.execute(`
+      CREATE TABLE IF NOT EXISTS jackpot_tickets (
+        round_id INT NOT NULL,
+        user_id VARCHAR(20) NOT NULL,
+        tickets INT NOT NULL DEFAULT 0,
+        PRIMARY KEY (round_id, user_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    await this.pool.execute(`
+      CREATE TABLE IF NOT EXISTS live_bets (
+        round_id VARCHAR(36) NOT NULL,
+        user_id VARCHAR(20) NOT NULL,
+        bet BIGINT NOT NULL,
+        status VARCHAR(10) NOT NULL DEFAULT 'open',
+        cashed_at DOUBLE NULL,
+        payout BIGINT NOT NULL DEFAULT 0,
+        guild_id VARCHAR(20) NULL,
+        created_at BIGINT NOT NULL,
+        PRIMARY KEY (round_id, user_id),
+        INDEX idx_live_status (status)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    // One-off: players who already played know the bot, skip the first-game welcome.
+    if ((await this.getBotSetting('migr_v4_tutorial')) !== '1') {
+      await tryExec(`UPDATE users SET tutorial_done = 1 WHERE total_games > 0`);
+      await this.setBotSetting('migr_v4_tutorial', '1').catch(() => {});
+    }
+
+    console.log('✅ Tabele v4 gotowe (drops, jackpot_rounds, jackpot_tickets, live_bets)');
+  }
+
+  // ── Guild settings (generic) ────────────────────────────────
+  public async updateGuildSettings(
+    guildId: string,
+    patch: Partial<Omit<GuildSettings, 'guild_id' | 'updated_at'>>,
+  ): Promise<GuildSettings> {
+    const id = String(guildId);
+    const entries = Object.entries(patch).filter(([key]) => GUILD_SETTING_COLUMNS.has(key));
+    if (entries.length === 0) return this.getGuildSettings(id);
+    const cols = entries.map(([key]) => key);
+    const values = entries.map(([, value]) => (value === undefined ? null : value)) as Array<string | number | null>;
+    await this.pool.execute(
+      `INSERT INTO guild_settings (guild_id, ${cols.join(', ')}, updated_at)
+       VALUES (?, ${cols.map(() => '?').join(', ')}, ?)
+       ON DUPLICATE KEY UPDATE ${cols.map(c => `${c} = VALUES(${c})`).join(', ')}, updated_at = VALUES(updated_at)`,
+      [id, ...values, Date.now()],
+    );
+    invalidateGuildSettings(id);
+    return this.getGuildSettings(id);
+  }
+
+  public async listGuildSettings(filter: 'drops' | 'announce' | 'all'): Promise<GuildSettings[]> {
+    const where = filter === 'drops'
+      ? 'WHERE drops_enabled = 1 AND drops_banned = 0 AND drops_channel_id IS NOT NULL'
+      : filter === 'announce'
+        ? 'WHERE announce_channel_id IS NOT NULL'
+        : '';
+    try {
+      const [rows] = await this.pool.execute(`SELECT * FROM guild_settings ${where}`);
+      return (rows as any[]).map(r => normalizeGuildSettings(r));
+    } catch (error) {
+      console.error('Błąd listy ustawień serwerów:', error);
+      return [];
+    }
+  }
+
+  /** Players ranked by profit (or volume) on one server since `sinceMs`. */
+  public async getGuildLeaderboard(
+    guildId: string,
+    sinceMs: number,
+    sort: 'net' | 'wagered',
+    limit: number = 10,
+  ): Promise<Array<{ user_id: string; games: number; wagered: number; net: number }>> {
+    const take = Math.min(Math.max(1, Math.trunc(limit) || 10), 25);
+    const order = sort === 'wagered' ? 'wagered DESC' : 'net DESC';
+    try {
+      const [rows] = await this.pool.execute(
+        `SELECT h.user_id, COUNT(*) AS games,
+                COALESCE(SUM(h.bet_amount), 0) AS wagered,
+                COALESCE(SUM(h.win_amount - h.bet_amount), 0) AS net
+         FROM game_history h
+         JOIN users u ON u.user_id = h.user_id AND u.is_blocked = FALSE
+         WHERE h.guild_id = ? AND h.played_at >= ?
+         GROUP BY h.user_id
+         ORDER BY ${order}
+         LIMIT ?`,
+        [guildId, sinceMs, take],
+      );
+      return (rows as any[]).map(r => ({
+        user_id: String(r.user_id),
+        games: Number(r.games) || 0,
+        wagered: Number(r.wagered) || 0,
+        net: Number(r.net) || 0,
+      }));
+    } catch (error) {
+      console.error('Błąd rankingu serwera:', error);
+      return [];
+    }
+  }
+
+  /** Servers ranked by volume - "server vs server". */
+  public async getTopGuilds(
+    sinceMs: number,
+    limit: number = 10,
+  ): Promise<Array<{ guild_id: string; games: number; wagered: number; players: number }>> {
+    const take = Math.min(Math.max(1, Math.trunc(limit) || 10), 50);
+    try {
+      const [rows] = await this.pool.execute(
+        `SELECT guild_id, COUNT(*) AS games, COALESCE(SUM(bet_amount), 0) AS wagered,
+                COUNT(DISTINCT user_id) AS players
+         FROM game_history
+         WHERE guild_id IS NOT NULL AND played_at >= ?
+         GROUP BY guild_id
+         ORDER BY wagered DESC
+         LIMIT ?`,
+        [sinceMs, take],
+      );
+      return (rows as any[]).map(r => ({
+        guild_id: String(r.guild_id),
+        games: Number(r.games) || 0,
+        wagered: Number(r.wagered) || 0,
+        players: Number(r.players) || 0,
+      }));
+    } catch (error) {
+      console.error('Błąd rankingu serwerów:', error);
+      return [];
+    }
+  }
+
+  // ── Players: rank, themes, cashback, reminders ──────────────
+  /** 1-based position on the global money leaderboard. */
+  public async getUserMoneyRank(userId: string): Promise<number | null> {
+    try {
+      const user = await this.getUserIfExists(userId);
+      if (!user || user.is_blocked) return null;
+      const [rows] = await this.pool.execute(
+        'SELECT COUNT(*) AS ahead FROM users WHERE is_blocked = FALSE AND money > ?',
+        [user.money],
+      );
+      return (Number((rows as any[])[0]?.ahead) || 0) + 1;
+    } catch {
+      return null;
+    }
+  }
+
+  public getOwnedThemes(user: UserData): string[] {
+    try {
+      const parsed = JSON.parse(user.owned_themes || '[]');
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** Atomic purchase. `owned` is a no-op so a double click can never charge twice. */
+  public async buyProfileTheme(
+    userId: string,
+    themeId: string,
+    price: number,
+  ): Promise<'bought' | 'owned' | 'funds'> {
+    const cost = toDelta(price);
+    return withUserLock(userId, async () => {
+      this.invalidateUser(userId);
+      const user = await this.getUser(userId);
+      const owned = this.getOwnedThemes(user);
+      if (owned.includes(themeId) || cost === 0) return 'owned';
+      const previous = user.owned_themes || '[]';
+      const next = JSON.stringify([...owned, themeId]);
+      const [result] = await this.pool.execute(
+        `UPDATE users SET money = money - ?, owned_themes = ?, profile_theme = ?
+         WHERE user_id = ? AND money >= ? AND COALESCE(owned_themes, '[]') = ?`,
+        [cost, next, themeId, userId, cost, previous],
+      );
+      this.invalidateUser(userId);
+      return affectedRows(result) === 1 ? 'bought' : 'funds';
+    });
+  }
+
+  public async setProfileTheme(userId: string, themeId: string): Promise<void> {
+    await this.pool.execute('UPDATE users SET profile_theme = ? WHERE user_id = ?', [themeId, userId]);
+    this.invalidateUser(userId);
+  }
+
+  /** Move the whole cashback balance into money. Returns the amount paid (0 = nothing). */
+  public async claimRakeback(userId: string, minimum: number): Promise<number> {
+    return withUserLock(userId, async () => {
+      this.invalidateUser(userId);
+      const user = await this.getUser(userId);
+      const amount = Number(user.rakeback_balance) || 0;
+      if (amount < minimum) return 0;
+      const [result] = await this.pool.execute(
+        `UPDATE users SET money = money + ?, rakeback_balance = rakeback_balance - ?,
+                          rakeback_total = rakeback_total + ?
+         WHERE user_id = ? AND rakeback_balance >= ?`,
+        [amount, amount, amount, userId, amount],
+      );
+      this.invalidateUser(userId);
+      return affectedRows(result) === 1 ? amount : 0;
+    });
+  }
+
+  public async setVoteReminder(userId: string, enabled: boolean): Promise<void> {
+    await this.getUser(userId);
+    await this.pool.execute('UPDATE users SET vote_reminder = ? WHERE user_id = ?', [enabled ? 1 : 0, userId]);
+    this.invalidateUser(userId);
+  }
+
+  /** Players whose 12h vote cooldown ended and who were not reminded about that vote yet. */
+  public async listDueVoteReminders(now: number = Date.now()): Promise<string[]> {
+    try {
+      const [rows] = await this.pool.execute(
+        `SELECT u.user_id, MAX(v.voted_at) AS last_vote, u.vote_reminded_at
+         FROM users u JOIN votes v ON v.user_id = u.user_id
+         WHERE u.vote_reminder = 1 AND u.is_blocked = FALSE
+         GROUP BY u.user_id, u.vote_reminded_at
+         HAVING last_vote <= ? AND last_vote >= ? AND u.vote_reminded_at < last_vote
+         LIMIT 100`,
+        [now - 12 * 60 * 60 * 1000, now - 36 * 60 * 60 * 1000],
+      );
+      return (rows as any[]).map(r => String(r.user_id));
+    } catch (error) {
+      console.error('Błąd listy przypomnień o głosowaniu:', error);
+      return [];
+    }
+  }
+
+  public async markVoteReminded(userId: string): Promise<void> {
+    await this.pool.execute('UPDATE users SET vote_reminded_at = ? WHERE user_id = ?', [Date.now(), userId]);
+    this.invalidateUser(userId);
+  }
+
+  /** True only the first time - gate for the one-off welcome. */
+  public async markTutorialDone(userId: string): Promise<boolean> {
+    try {
+      const [result] = await this.pool.execute(
+        'UPDATE users SET tutorial_done = 1 WHERE user_id = ? AND tutorial_done = 0',
+        [userId],
+      );
+      this.invalidateUser(userId);
+      return affectedRows(result) === 1;
+    } catch {
+      return false;
+    }
+  }
+
+  // ── Drops ───────────────────────────────────────────────────
+  public async createDrop(input: {
+    guildId: string;
+    channelId: string;
+    amount: number;
+    suit: string;
+  }): Promise<number> {
+    const [result] = await this.pool.execute(
+      `INSERT INTO drops (guild_id, channel_id, amount, suit, status, created_at) VALUES (?, ?, ?, ?, 'open', ?)`,
+      [input.guildId, input.channelId, toDelta(input.amount), input.suit, Date.now()],
+    );
+    return Number((result as mysql.ResultSetHeader).insertId) || 0;
+  }
+
+  public async getDropById(dropId: number): Promise<{ id: number; suit: string; status: string; amount: number } | null> {
+    const [rows] = await this.pool.execute('SELECT id, suit, status, amount FROM drops WHERE id = ? LIMIT 1', [dropId]);
+    const row = (rows as any[])[0];
+    return row
+      ? { id: Number(row.id), suit: String(row.suit), status: String(row.status), amount: Number(row.amount) || 0 }
+      : null;
+  }
+
+  public async setDropMessage(dropId: number, messageId: string): Promise<void> {
+    await this.pool.execute('UPDATE drops SET message_id = ? WHERE id = ?', [messageId, dropId]);
+  }
+
+  /** First valid click wins; everyone else gets `taken`. Money moves only for the winner. */
+  public async claimDrop(
+    dropId: number,
+    userId: string,
+  ): Promise<{ ok: true; amount: number } | { ok: false; reason: 'taken' | 'missing' }> {
+    const [rows] = await this.pool.execute('SELECT * FROM drops WHERE id = ? LIMIT 1', [dropId]);
+    const drop = (rows as any[])[0];
+    if (!drop) return { ok: false, reason: 'missing' };
+    const [claim] = await this.pool.execute(
+      `UPDATE drops SET status = 'claimed', claimer_id = ?, claimed_at = ? WHERE id = ? AND status = 'open'`,
+      [userId, Date.now(), dropId],
+    );
+    if (affectedRows(claim) !== 1) return { ok: false, reason: 'taken' };
+    const amount = Number(drop.amount) || 0;
+    await this.updateMoney(userId, amount);
+    return { ok: true, amount };
+  }
+
+  public async expireDrop(dropId: number): Promise<boolean> {
+    const [result] = await this.pool.execute(
+      `UPDATE drops SET status = 'expired' WHERE id = ? AND status = 'open'`,
+      [dropId],
+    );
+    return affectedRows(result) === 1;
+  }
+
+  public async expireStaleDrops(olderThanMs: number): Promise<number> {
+    try {
+      const [result] = await this.pool.execute(
+        `UPDATE drops SET status = 'expired' WHERE status = 'open' AND created_at < ?`,
+        [Date.now() - olderThanMs],
+      );
+      return affectedRows(result);
+    } catch {
+      return 0;
+    }
+  }
+
+  public async countDropClaimsSince(userId: string, sinceMs: number): Promise<number> {
+    const [rows] = await this.pool.execute(
+      `SELECT COUNT(*) AS cnt FROM drops WHERE claimer_id = ? AND status = 'claimed' AND claimed_at >= ?`,
+      [userId, sinceMs],
+    );
+    return Number((rows as any[])[0]?.cnt) || 0;
+  }
+
+  public async countGuildDropsSince(guildId: string, sinceMs: number): Promise<number> {
+    const [rows] = await this.pool.execute(
+      'SELECT COUNT(*) AS cnt FROM drops WHERE guild_id = ? AND created_at >= ?',
+      [guildId, sinceMs],
+    );
+    return Number((rows as any[])[0]?.cnt) || 0;
+  }
+
+  public async getDropStats(sinceMs: number): Promise<{ drops: number; claimed: number; paid: number; guilds: number }> {
+    try {
+      const [rows] = await this.pool.execute(
+        `SELECT COUNT(*) AS drops,
+                SUM(CASE WHEN status = 'claimed' THEN 1 ELSE 0 END) AS claimed,
+                COALESCE(SUM(CASE WHEN status = 'claimed' THEN amount ELSE 0 END), 0) AS paid,
+                COUNT(DISTINCT guild_id) AS guilds
+         FROM drops WHERE created_at >= ?`,
+        [sinceMs],
+      );
+      const r = (rows as any[])[0] || {};
+      return {
+        drops: Number(r.drops) || 0,
+        claimed: Number(r.claimed) || 0,
+        paid: Number(r.paid) || 0,
+        guilds: Number(r.guilds) || 0,
+      };
+    } catch {
+      return { drops: 0, claimed: 0, paid: 0, guilds: 0 };
+    }
+  }
+
+  // ── Jackpot ─────────────────────────────────────────────────
+  public async getOpenJackpotRound(): Promise<JackpotRound | null> {
+    const [rows] = await this.pool.execute(
+      `SELECT * FROM jackpot_rounds WHERE status = 'open' ORDER BY id DESC LIMIT 1`,
+    );
+    const row = (rows as any[])[0];
+    return row ? normalizeJackpotRound(row) : null;
+  }
+
+  public async getLastDrawnJackpot(): Promise<JackpotRound | null> {
+    const [rows] = await this.pool.execute(
+      `SELECT * FROM jackpot_rounds WHERE status = 'drawn' ORDER BY id DESC LIMIT 1`,
+    );
+    const row = (rows as any[])[0];
+    return row ? normalizeJackpotRound(row) : null;
+  }
+
+  public async createJackpotRound(drawAt: number, seedPot: number): Promise<JackpotRound> {
+    await this.pool.execute(
+      `INSERT INTO jackpot_rounds (status, pot, total_tickets, draw_at, created_at) VALUES ('open', ?, 0, ?, ?)`,
+      [toDelta(seedPot), drawAt, Date.now()],
+    );
+    return (await this.getOpenJackpotRound())!;
+  }
+
+  /** Charges the player, grows the pot and adds tickets. Throws InsufficientFundsError. */
+  public async buyJackpotTickets(
+    roundId: number,
+    userId: string,
+    count: number,
+    pricePerTicket: number,
+    potSharePerTicket: number,
+  ): Promise<number> {
+    const n = Math.max(1, Math.trunc(count));
+    const cost = toDelta(n * pricePerTicket);
+    const toPot = toDelta(n * potSharePerTicket);
+    return withUserLock(userId, async () => {
+      await this.updateMoney(userId, -cost);
+      const [res] = await this.pool.execute(
+        `UPDATE jackpot_rounds SET pot = pot + ?, total_tickets = total_tickets + ? WHERE id = ? AND status = 'open'`,
+        [toPot, n, roundId],
+      );
+      if (affectedRows(res) !== 1) {
+        await this.updateMoney(userId, cost).catch(() => {});
+        throw new Error('Jackpot round closed');
+      }
+      await this.pool.execute(
+        `INSERT INTO jackpot_tickets (round_id, user_id, tickets) VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE tickets = tickets + VALUES(tickets)`,
+        [roundId, userId, n],
+      );
+      return this.getJackpotTickets(roundId, userId);
+    });
+  }
+
+  public async getJackpotTickets(roundId: number, userId: string): Promise<number> {
+    const [rows] = await this.pool.execute(
+      'SELECT tickets FROM jackpot_tickets WHERE round_id = ? AND user_id = ?',
+      [roundId, userId],
+    );
+    return Number((rows as any[])[0]?.tickets) || 0;
+  }
+
+  public async countJackpotPlayers(roundId: number): Promise<number> {
+    const [rows] = await this.pool.execute(
+      'SELECT COUNT(*) AS cnt FROM jackpot_tickets WHERE round_id = ? AND tickets > 0',
+      [roundId],
+    );
+    return Number((rows as any[])[0]?.cnt) || 0;
+  }
+
+  /**
+   * Weighted draw. The status flip to `drawing` is the claim, so a round can
+   * never be paid twice. With no tickets the round closes without a winner and
+   * the pot is handed back to the caller to roll over.
+   */
+  public async drawJackpot(roundId: number): Promise<
+    | { winnerId: string; winnerTickets: number; pot: number; totalTickets: number }
+    | { winnerId: null; pot: number }
+    | null
+  > {
+    const [claim] = await this.pool.execute(
+      `UPDATE jackpot_rounds SET status = 'drawing' WHERE id = ? AND status = 'open'`,
+      [roundId],
+    );
+    if (affectedRows(claim) !== 1) return null;
+
+    const [roundRows] = await this.pool.execute('SELECT * FROM jackpot_rounds WHERE id = ?', [roundId]);
+    const round = normalizeJackpotRound((roundRows as any[])[0]);
+    const [ticketRows] = await this.pool.execute(
+      `SELECT t.user_id, t.tickets FROM jackpot_tickets t
+       JOIN users u ON u.user_id = t.user_id AND u.is_blocked = FALSE
+       WHERE t.round_id = ? AND t.tickets > 0`,
+      [roundId],
+    );
+    const entries = (ticketRows as any[]).map(r => ({ userId: String(r.user_id), tickets: Number(r.tickets) || 0 }));
+    const total = entries.reduce((sum, e) => sum + e.tickets, 0);
+
+    if (total <= 0) {
+      await this.pool.execute(
+        `UPDATE jackpot_rounds SET status = 'drawn', drawn_at = ? WHERE id = ?`,
+        [Date.now(), roundId],
+      );
+      return { winnerId: null, pot: round.pot };
+    }
+
+    let pick = randomInt(total);
+    let winner = entries[0];
+    for (const entry of entries) {
+      if (pick < entry.tickets) {
+        winner = entry;
+        break;
+      }
+      pick -= entry.tickets;
+    }
+
+    await this.updateMoney(winner.userId, round.pot);
+    await this.pool.execute(
+      `UPDATE jackpot_rounds SET status = 'drawn', winner_id = ?, winner_tickets = ?, drawn_at = ? WHERE id = ?`,
+      [winner.userId, winner.tickets, Date.now(), roundId],
+    );
+    return { winnerId: winner.userId, winnerTickets: winner.tickets, pot: round.pot, totalTickets: total };
+  }
+
+  /** Owner tool: make the open round due so the next scheduler tick draws it. */
+  public async forceJackpotDrawNow(roundId: number): Promise<void> {
+    await this.pool.execute(`UPDATE jackpot_rounds SET draw_at = ? WHERE id = ? AND status = 'open'`, [Date.now() - 1, roundId]);
+  }
+
+  /** A round left in `drawing` by a crash before payout goes back to `open` for a retry. */
+  public async recoverStuckJackpots(): Promise<void> {
+    try {
+      await this.pool.execute(`UPDATE jackpot_rounds SET status = 'open' WHERE status = 'drawing' AND winner_id IS NULL`);
+    } catch {}
+  }
+
+  // ── Live crash bets ─────────────────────────────────────────
+  public async insertLiveBet(roundId: string, userId: string, bet: number, guildId: string | null): Promise<void> {
+    await this.pool.execute(
+      `INSERT INTO live_bets (round_id, user_id, bet, status, guild_id, created_at) VALUES (?, ?, ?, 'open', ?, ?)`,
+      [roundId, userId, toDelta(bet), guildId, Date.now()],
+    );
+  }
+
+  /** True if this call settled the bet - guards against double settlement. */
+  public async settleLiveBet(
+    roundId: string,
+    userId: string,
+    status: 'paid' | 'lost' | 'refunded',
+    cashedAt: number | null,
+    payout: number,
+  ): Promise<boolean> {
+    const [result] = await this.pool.execute(
+      `UPDATE live_bets SET status = ?, cashed_at = ?, payout = ? WHERE round_id = ? AND user_id = ? AND status = 'open'`,
+      [status, cashedAt, toDelta(payout), roundId, userId],
+    );
+    return affectedRows(result) === 1;
+  }
+
+  /** On startup: any bet still open belongs to a round that died with the process. */
+  public async refundOpenLiveBets(): Promise<number> {
+    try {
+      const [rows] = await this.pool.execute(`SELECT round_id, user_id, bet FROM live_bets WHERE status = 'open'`);
+      let refunded = 0;
+      for (const row of rows as any[]) {
+        if (await this.settleLiveBet(String(row.round_id), String(row.user_id), 'refunded', null, 0)) {
+          await this.updateMoney(String(row.user_id), Number(row.bet) || 0);
+          refunded++;
+        }
+      }
+      return refunded;
+    } catch (error) {
+      console.error('Błąd zwrotu zakładów crash-live:', error);
+      return 0;
+    }
+  }
+
+  // ── Admin analytics ─────────────────────────────────────────
+  public async getDailyVolume(days: number): Promise<Array<{ day: string; games: number; wagered: number; houseNet: number }>> {
+    const since = Date.now() - days * 24 * 60 * 60 * 1000;
+    try {
+      const [rows] = await this.pool.execute(
+        `SELECT DATE(FROM_UNIXTIME(played_at / 1000)) AS d,
+                COUNT(*) AS games,
+                COALESCE(SUM(bet_amount), 0) AS wagered,
+                COALESCE(SUM(bet_amount - win_amount), 0) AS house_net
+         FROM game_history WHERE played_at >= ?
+         GROUP BY d ORDER BY d ASC`,
+        [since],
+      );
+      return (rows as any[]).map(r => ({
+        day: r.d instanceof Date ? r.d.toISOString().slice(0, 10) : String(r.d).slice(0, 10),
+        games: Number(r.games) || 0,
+        wagered: Number(r.wagered) || 0,
+        houseNet: Number(r.house_net) || 0,
+      }));
+    } catch (error) {
+      console.error('Błąd dziennego wolumenu:', error);
+      return [];
     }
   }
 

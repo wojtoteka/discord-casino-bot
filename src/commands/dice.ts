@@ -2,11 +2,12 @@
 import { ChatInputCommandInteraction } from 'discord.js';
 import { CasinoBot } from '../index';
 import { EmbedHelper, GameHelper } from '../utils/helpers';
-import { formatAchievementNamesInline } from '../utils/achievements';
 import { withOwner } from '../utils/components';
 import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
 import { GAMES } from '../config/constants';
-import { formatUsd, gameResultEmbed, pendingEmbed, pendingList, playAgainRow } from '../utils/embeds';
+import { formatUsd, playAgainRow } from '../utils/embeds';
+import { gameView, pendingOutcome, settledOutcome } from '../utils/gameView';
+import { renderDice, safeRender } from '../render';
 import { InsufficientFundsError } from '../database/Database';
 import { withUserLock } from '../utils/moneyLock';
 
@@ -75,12 +76,22 @@ export default {
       throw error;
     }
 
-    await interaction.editReply({
-      embeds: [pendingEmbed(
-        t(lang, 'dice_title'),
-        pendingList(t(lang, 'dice_rolling'), [[t(lang, 'label_bet'), formatUsd(bet)]]),
-      )],
-    });
+    await interaction.editReply(gameView({
+      lang,
+      title: t(lang, 'dice_title'),
+      kind: 'pending',
+      image: await safeRender('dice', () => renderDice({
+        rolled: null,
+        guess,
+        guessLabel: t(lang, 'card_your_pick'),
+        outcome: pendingOutcome(t(lang, 'card_dice_roll'), [
+          [t(lang, 'label_bet'), formatUsd(bet)],
+          [t(lang, 'card_your_pick'), String(guess)],
+        ]),
+      })),
+      imageName: 'dice',
+      summary: t(lang, 'dice_rolling'),
+    }));
     await new Promise(r => setTimeout(r, 1000));
 
     const result   = GameHelper.getRandomNumber(1, 6);
@@ -107,20 +118,33 @@ export default {
     const newAchievements = await client.db.checkAchievements(userId);
     const newData = await client.db.getUser(userId);
 
-    const embed = gameResultEmbed({
-      title: t(lang, 'dice_title'),
-      won,
-      bet,
-      result: `${diceFace} ${result}`,
-      balance: newData.money,
-      details: [[t(lang, 'dice_guess'), `${DICE_FACES[guess]} ${guess}`]],
-      extra: won
-        ? (newAchievements.length > 0
-          ? t(lang, 'new_achievements')(formatAchievementNamesInline(newAchievements)).trim()
-          : t(lang, 'dice_win')(payout - bet))
-        : t(lang, 'dice_loss')(bet),
+    const kind = won ? 'win' : 'loss';
+    const image = await safeRender('dice', () => renderDice({
+      rolled: result,
+      guess,
+      guessLabel: t(lang, 'card_your_pick'),
+      outcome: settledOutcome({
+        lang,
+        kind,
+        net: won ? payout - bet : -bet,
+        bet,
+        balance: newData.money,
+        rows: [
+          [t(lang, 'card_your_pick'), String(guess)],
+          [t(lang, 'card_result'), String(result)],
+        ],
+      }),
+    }));
+    await interaction.editReply(gameView({
       lang,
-    });
-    await interaction.editReply({ embeds: [embed], components: [row] });
+      title: t(lang, 'dice_title'),
+      kind,
+      image,
+      imageName: 'dice',
+      summary: won ? t(lang, 'dice_win')(payout - bet) : t(lang, 'dice_loss')(bet),
+      fallback: `${diceFace} ${result}`,
+      achievements: newAchievements,
+      components: [row],
+    }));
   },
 };

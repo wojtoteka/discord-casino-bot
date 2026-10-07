@@ -7,7 +7,7 @@ import {
 } from 'discord.js';
 import { CasinoBot } from '../index';
 import { EmbedHelper, GameHelper } from '../utils/helpers';
-import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
+import { getUserLang, slashLocales, slashNameLocales, t, type Lang } from '../i18n';
 import { GAMES } from '../config/constants';
 import { formatUsd, pendingEmbed, pendingList } from '../utils/embeds';
 import { InsufficientFundsError } from '../database/Database';
@@ -23,13 +23,14 @@ function buildMinesGrid(
   sessionId: string,
   ownerId: string,
   forceDisabled = false,
+  lang: Lang = 'pl',
 ): ActionRowBuilder<ButtonBuilder>[] {
   const rows: ActionRowBuilder<ButtonBuilder>[] = [];
 
   const cashRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId(`mines:cashout:${sessionId}:${ownerId}`)
-      .setLabel('💸 Wypłać')
+      .setLabel(t(lang, 'mines_cashout_btn'))
       .setStyle(ButtonStyle.Success)
       .setDisabled(forceDisabled || revealAll || session.revealed_positions.length === 0),
   );
@@ -166,7 +167,7 @@ export default {
       ),
     );
 
-    const components = buildMinesGrid(session, false, session.id, userId);
+    const components = buildMinesGrid(session, false, session.id, userId, false, lang);
     await interaction.editReply({ embeds: [embed], components });
   },
 };

@@ -2,10 +2,11 @@ import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction } from 'discord.js';
 import { CasinoBot } from '../index';
 import { EmbedHelper, GameHelper } from '../utils/helpers';
-import { formatAchievementNamesInline } from '../utils/achievements';
 import { withOwner } from '../utils/components';
 import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
-import { formatUsd, gameResultEmbed, infoGameEmbed, pendingEmbed, pendingList, playAgainRow } from '../utils/embeds';
+import { formatUsd, playAgainRow } from '../utils/embeds';
+import { gameView, pendingOutcome, settledOutcome, symbolLabel } from '../utils/gameView';
+import { renderKeno, safeRender } from '../render';
 import { InsufficientFundsError } from '../database/Database';
 import { withUserLock } from '../utils/moneyLock';
 
@@ -152,18 +153,21 @@ export default {
       throw error;
     }
 
-    await interaction.editReply({
-      embeds: [pendingEmbed(
-        t(lang, 'keno_title'),
-        pendingList(
-          t(lang, 'keno_drawing')(DRAWS),
-          [
-            [t(lang, 'label_bet'), formatUsd(bet)],
-            [t(lang, 'keno_picks'), picks.slice().sort((a, b) => a - b).join('  ')],
-          ],
-        ),
-      )],
-    });
+    await interaction.editReply(gameView({
+      lang,
+      title: t(lang, 'keno_title'),
+      kind: 'pending',
+      image: await safeRender('keno', () => renderKeno({
+        picks,
+        drawn: [],
+        outcome: pendingOutcome(t(lang, 'card_keno_draw'), [
+          [t(lang, 'label_bet'), formatUsd(bet)],
+          [t(lang, 'card_hits'), `0/${spots}`],
+        ]),
+      })),
+      imageName: 'keno',
+      summary: t(lang, 'keno_drawing')(DRAWS),
+    }));
     await new Promise(r => setTimeout(r, 1100));
 
     const draws = sampleUnique(DRAWS, POOL);
@@ -190,16 +194,6 @@ export default {
     const newAchievements = await client.db.checkAchievements(userId);
     const newData = await client.db.getUser(userId);
 
-    const extra = newAchievements.length > 0
-      ? t(lang, 'new_achievements')(formatAchievementNamesInline(newAchievements)).trim()
-      : undefined;
-
-    const resultLabel = `${hits.length}/${spots}${mult > 0 ? ` · ${mult}x` : ''}`;
-    const details: Array<[string, string]> = [
-      [t(lang, 'keno_your'), formatNumbers(picks, hitSet)],
-      [t(lang, 'keno_drawn'), formatNumbers(draws, hitSet)],
-    ];
-
     const again = playAgainRow({
       customIdPlayAgain: withOwner(`play_again:keno:${bet}:${encodePicks(picks)}`, userId),
       customIdBalance: withOwner(`nav:balance:${userId}`, userId),
@@ -207,29 +201,32 @@ export default {
       balanceLabel: t(lang, 'btn_balance'),
     });
 
-    if (isPush) {
-      const embed = infoGameEmbed(t(lang, 'keno_title'), extra ?? t(lang, 'keno_push'), {
-        bet,
-        result: resultLabel,
-        balance: newData.money,
-        details,
+    const kind = isWin ? 'win' : isPush ? 'push' : 'loss';
+    const image = await safeRender('keno', () => renderKeno({
+      picks,
+      drawn: draws,
+      outcome: settledOutcome({
         lang,
-      });
-      await interaction.editReply({ embeds: [embed], components: [again] });
-      return;
-    }
-
-    const embed = gameResultEmbed({
-      title: t(lang, 'keno_title'),
-      won: isWin,
-      bet,
-      result: resultLabel,
-      balance: newData.money,
-      details,
-      extra,
+        kind,
+        net: winnings - bet,
+        bet,
+        balance: newData.money,
+        rows: [
+          [t(lang, 'card_hits'), `${hits.length}/${spots}`],
+          [t(lang, 'card_mult'), mult > 0 ? `×${mult}` : '-'],
+        ],
+      }),
+    }));
+    await interaction.editReply(gameView({
       lang,
-    });
-
-    await interaction.editReply({ embeds: [embed], components: [again] });
+      title: t(lang, 'keno_title'),
+      kind,
+      image,
+      imageName: 'keno',
+      summary: isPush ? t(lang, 'keno_push') : `${t(lang, 'card_hits')}: **${hits.length}/${spots}**${mult > 0 ? ` · ×${mult}` : ''}`,
+      fallback: `${t(lang, 'keno_your')}: ${formatNumbers(picks, hitSet)}\n${t(lang, 'keno_drawn')}: ${formatNumbers(draws, hitSet)}`,
+      achievements: newAchievements,
+      components: [again],
+    }));
   },
 };

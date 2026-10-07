@@ -1,4 +1,5 @@
 // Polish translations
+import { plExtra } from './extra';
 export const pl = {
   // ── Common ──────────────────────────────────────────────────
   error_insufficient_funds: (bet: number, has: number) =>
@@ -549,6 +550,8 @@ export const pl = {
 
   duel_guild_disabled_title: 'Pojedynki wyłączone',
   duel_guild_disabled: 'Administrator serwera wyłączył pojedynki na tym serwerze.',
+
+  ...plExtra,
 };
 
 export type Locale = typeof pl;

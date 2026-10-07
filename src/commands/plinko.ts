@@ -4,9 +4,10 @@ import { ChatInputCommandInteraction } from 'discord.js';
 import { CasinoBot } from '../index';
 import { GAMES } from '../config/constants';
 import { EmbedHelper, GameHelper } from '../utils/helpers';
-import { formatAchievementNamesInline } from '../utils/achievements';
 import { withOwner } from '../utils/components';
-import { formatUsd, gameResultEmbed, pendingEmbed, pendingList, playAgainRow } from '../utils/embeds';
+import { formatUsd, playAgainRow } from '../utils/embeds';
+import { gameView, pendingOutcome, settledOutcome, symbolLabel } from '../utils/gameView';
+import { renderPlinko, safeRender } from '../render';
 import { InsufficientFundsError } from '../database/Database';
 import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
 import { withUserLock } from '../utils/moneyLock';
@@ -37,20 +38,6 @@ function dropBall(): { steps: Step[]; bucket: number } {
 
 function formatMult(mult: number): string {
   return `${mult}×`;
-}
-
-function dropFrame(bet: number, row: number, step: Step, lang: 'pl' | 'en'): string {
-  const width = row + 2;
-  const cells = Array.from({ length: width }, (_, i) => (i === step.pos ? '🔴' : '🔹'));
-  const arrow = step.dir === 'right' ? '↘️' : '↙️';
-  return pendingList(
-    `${arrow} ${t(lang, 'plinko_dropping')}`,
-    [
-      [t(lang, 'label_bet'), formatUsd(bet)],
-      [t(lang, 'plinko_row'), `${row + 1}/${ROWS}`],
-    ],
-    cells.join(' '),
-  );
 }
 
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
@@ -107,13 +94,25 @@ export default {
     const mult = MULTIPLIERS[bucket];
     const winnings = Math.floor(bet * mult);
 
-    for (let i = 0; i < ROWS; i++) {
-      const embed = pendingEmbed(t(lang, 'plinko_title'), dropFrame(bet, i, steps[i], lang));
-      await interaction.editReply({ embeds: [embed] });
-      await sleep(180 + i * 40);
+    for (const upTo of [3, 6]) {
+      await interaction.editReply(gameView({
+        lang,
+        title: t(lang, 'plinko_title'),
+        kind: 'pending',
+        image: await safeRender('plinko', () => renderPlinko({
+          multipliers: MULTIPLIERS,
+          path: steps.slice(0, upTo).map(s => s.pos),
+          bucket: null,
+          outcome: pendingOutcome(t(lang, 'card_plinko_drop'), [
+            [t(lang, 'label_bet'), formatUsd(bet)],
+            [t(lang, 'plinko_row'), `${upTo}/${ROWS}`],
+          ]),
+        })),
+        imageName: 'plinko',
+        summary: t(lang, 'plinko_dropping'),
+      }));
+      await sleep(600);
     }
-
-    await sleep(280);
 
     const isWin = winnings > bet;
     const outcome: 'win' | 'loss' = isWin ? 'win' : 'loss';
@@ -130,21 +129,6 @@ export default {
     const newAchievements = await client.db.checkAchievements(userId);
     const newData = await client.db.getUser(userId);
 
-    const result = t(lang, 'plinko_bucket')(formatMult(mult));
-    const extra = newAchievements.length > 0
-      ? t(lang, 'new_achievements')(formatAchievementNamesInline(newAchievements)).trim()
-      : undefined;
-
-    const embed = gameResultEmbed({
-      title: t(lang, 'plinko_title'),
-      won: isWin,
-      bet,
-      result,
-      balance: newData.money,
-      extra,
-      lang,
-    });
-
     const row = playAgainRow({
       customIdPlayAgain: withOwner(`play_again:plinko:${bet}`, userId),
       customIdBalance: withOwner(`nav:balance:${userId}`, userId),
@@ -152,6 +136,29 @@ export default {
       balanceLabel: t(lang, 'btn_balance'),
     });
 
-    await interaction.editReply({ embeds: [embed], components: [row] });
+    const kind = isWin ? 'win' : 'loss';
+    const image = await safeRender('plinko', () => renderPlinko({
+      multipliers: MULTIPLIERS,
+      path: steps.map(s => s.pos),
+      bucket,
+      outcome: settledOutcome({
+        lang,
+        kind,
+        net: winnings - bet,
+        bet,
+        balance: newData.money,
+        rows: [[t(lang, 'card_bucket'), formatMult(mult)]],
+      }),
+    }));
+    await interaction.editReply(gameView({
+      lang,
+      title: t(lang, 'plinko_title'),
+      kind,
+      image,
+      imageName: 'plinko',
+      summary: t(lang, 'plinko_bucket')(formatMult(mult)),
+      achievements: newAchievements,
+      components: [row],
+    }));
   },
 };

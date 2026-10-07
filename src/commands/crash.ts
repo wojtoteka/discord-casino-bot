@@ -6,6 +6,30 @@ import { formatAchievementNamesInline } from '../utils/achievements';
 import { withOwner } from '../utils/components';
 import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
 import { formatUsd, gameResultEmbed, pendingEmbed, pendingList, playAgainRow } from '../utils/embeds';
+import { imageAttachment, renderCrashChart, safeRender } from '../render';
+import type { Lang } from '../i18n';
+import type { EmbedBuilder } from 'discord.js';
+
+/** Attach the live chart to an embed; text-only if rendering fails. */
+async function withChart(
+  embed: EmbedBuilder,
+  lang: Lang,
+  state: 'running' | 'crashed',
+  history: number[],
+  multiplier: number,
+  bet: number,
+  cashedAt?: number,
+) {
+  const image = await safeRender('crash', () => renderCrashChart({
+    state,
+    history,
+    multiplier,
+    solo: { bet, cashedAt },
+  }, lang));
+  if (!image) return { embeds: [embed], files: [], attachments: [] };
+  embed.setImage('attachment://crash.webp');
+  return { embeds: [embed], files: [imageAttachment(image, 'crash')], attachments: [] };
+}
 import { InsufficientFundsError } from '../database/Database';
 import { withUserLock } from '../utils/moneyLock';
 
@@ -14,12 +38,6 @@ function generateCrashPoint(): number {
   const h = Math.floor(Math.random() * e);
   if (h % 25 === 0) return 1.00;
   return Math.max(1.00, Math.floor((100 * e - h) / (e - h)) / 100);
-}
-
-function getMultiplierBar(multiplier: number): string {
-  const filled = Math.min(Math.floor(multiplier * 2), 20);
-  const bar = '█'.repeat(filled) + '░'.repeat(20 - filled);
-  return `\`[${bar}]\``;
 }
 
 export default {
@@ -73,6 +91,7 @@ export default {
 
     const crashPoint = generateCrashPoint();
     let currentMultiplier = 1.00;
+    const history: number[] = [1];
     let cashed = false;
     let crashed = false;
 
@@ -82,15 +101,6 @@ export default {
           .setCustomId('crash_cashout')
           .setLabel(`💸 ${t(lang, 'crash_cashout')}`)
           .setStyle(ButtonStyle.Success),
-      );
-
-    const disabledButton = new ActionRowBuilder<ButtonBuilder>()
-      .addComponents(
-        new ButtonBuilder()
-          .setCustomId('crash_cashout')
-          .setLabel(`💸 ${t(lang, 'crash_cashout')}`)
-          .setStyle(ButtonStyle.Success)
-          .setDisabled(true),
       );
 
     const againRow = playAgainRow({
@@ -108,10 +118,13 @@ export default {
           [t(lang, 'crash_multi'), `x${currentMultiplier.toFixed(2)}`],
           [t(lang, 'label_bet'), formatUsd(bet)],
         ],
-      ) + `\n${getMultiplierBar(currentMultiplier)}`,
+      ),
     );
 
-    await interaction.reply({ embeds: [startEmbed], components: [cashOutButton] });
+    await interaction.reply({
+      ...(await withChart(startEmbed, lang, 'running', history, currentMultiplier, bet)),
+      components: [cashOutButton],
+    });
     const reply = await interaction.fetchReply();
 
     // Long enough for a ~100x crash (~17 min of ticks). Timeout is NOT a loss.
@@ -136,7 +149,7 @@ export default {
       const newAchievements = await client.db.checkAchievements(userId);
       const newData = await client.db.getUser(userId);
 
-      let extra = getMultiplierBar(currentMultiplier);
+      let extra = '';
       if (newAchievements.length > 0) {
         extra += t(lang, 'new_achievements')(formatAchievementNamesInline(newAchievements));
       }
@@ -151,7 +164,10 @@ export default {
         lang,
       });
 
-      await buttonInteraction.update({ embeds: [embed], components: [disabledButton, againRow] });
+      await buttonInteraction.update({
+        ...(await withChart(embed, lang, 'running', history, currentMultiplier, bet, currentMultiplier)),
+        components: [againRow],
+      });
     });
 
     const tick = async () => {
@@ -159,6 +175,7 @@ export default {
 
       currentMultiplier += 0.05 + Math.random() * 0.15;
       currentMultiplier = Math.round(currentMultiplier * 100) / 100;
+      history.push(Math.min(currentMultiplier, crashPoint));
 
       if (currentMultiplier >= crashPoint) {
         if (cashed) return;
@@ -182,7 +199,10 @@ export default {
         });
 
         try {
-          await interaction.editReply({ embeds: [embed], components: [disabledButton, againRow] });
+          await interaction.editReply({
+            ...(await withChart(embed, lang, 'crashed', history, crashPoint, bet)),
+            components: [againRow],
+          });
         } catch {}
         return;
       }
@@ -196,11 +216,15 @@ export default {
             [t(lang, 'crash_multi'), `x${currentMultiplier.toFixed(2)}`],
             [t(lang, 'crash_potential'), formatUsd(potentialWin)],
           ],
-        ) + `\n${getMultiplierBar(currentMultiplier)}`,
+        ),
       );
 
       try {
-        await interaction.editReply({ embeds: [embed], components: [cashOutButton] });
+        if (cashed || crashed) return;
+        await interaction.editReply({
+          ...(await withChart(embed, lang, 'running', history, currentMultiplier, bet)),
+          components: [cashOutButton],
+        });
       } catch {}
 
       setTimeout(tick, 1000 + Math.random() * 500);

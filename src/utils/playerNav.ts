@@ -7,7 +7,9 @@ import { t, type Lang } from '../i18n';
  * `nav:` branch in events/interactionCreate, which simply re-runs the target
  * slash command, so every target must be a registered command name.
  */
-export type NavTarget = 'balance' | 'profil' | 'ranking' | 'top' | 'questy' | 'achievementy';
+export type NavTarget =
+  | 'balance' | 'profil' | 'ranking' | 'top' | 'questy' | 'achievementy'
+  | 'vip' | 'sklep' | 'jackpot' | 'daily' | 'kasyno';
 
 const LABEL_KEYS = {
   balance: 'btn_balance',
@@ -16,10 +18,15 @@ const LABEL_KEYS = {
   top: 'btn_top',
   questy: 'btn_quests',
   achievementy: 'btn_achievements',
+  vip: 'btn_vip',
+  sklep: 'btn_shop',
+  jackpot: 'btn_jackpot',
+  daily: 'btn_daily',
+  kasyno: 'btn_casino',
 } as const;
 
 /** Targets that always act on the viewer, never on the looked-up player. */
-const SELF_ONLY = new Set<NavTarget>(['questy']);
+const SELF_ONLY = new Set<NavTarget>(['questy', 'vip', 'sklep', 'jackpot', 'daily', 'kasyno']);
 
 export function navRow(
   ownerId: string,

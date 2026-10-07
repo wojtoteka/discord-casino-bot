@@ -2,10 +2,11 @@ import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction } from 'discord.js';
 import { CasinoBot } from '../index';
 import { EmbedHelper, GameHelper } from '../utils/helpers';
-import { formatAchievementNamesInline } from '../utils/achievements';
 import { withOwner } from '../utils/components';
 import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
-import { formatUsd, gameResultEmbed, infoGameEmbed, pendingEmbed, pendingList, playAgainRow } from '../utils/embeds';
+import { formatUsd, playAgainRow } from '../utils/embeds';
+import { gameView, pendingOutcome, settledOutcome, symbolLabel } from '../utils/gameView';
+import { renderWheel, safeRender } from '../render';
 import { InsufficientFundsError } from '../database/Database';
 import { withUserLock } from '../utils/moneyLock';
 
@@ -89,26 +90,21 @@ export default {
 
     const result = spinWheel();
 
-    const frames = 7;
-    for (let i = 0; i < frames; i++) {
-      const isLast = i === frames - 1;
-      const seg = isLast ? result : GameHelper.getRandomChoice(SEGMENTS);
-      await interaction.editReply({
-        embeds: [pendingEmbed(
-          t(lang, 'kolo_title'),
-          pendingList(
-            isLast ? t(lang, 'kolo_stopped') : t(lang, 'kolo_spinning'),
-            [
-              [t(lang, 'label_bet'), formatUsd(bet)],
-              [t(lang, 'kolo_field'), `${seg.emoji} ${segmentLabel(lang, seg)}`],
-            ],
-          ),
-        )],
-      });
-      await new Promise(r => setTimeout(r, 220 + i * 90));
+    for (let i = 0; i < 2; i++) {
+      await interaction.editReply(gameView({
+        lang,
+        title: t(lang, 'kolo_title'),
+        kind: 'pending',
+        image: await safeRender('kolo', () => renderWheel({
+          result: null,
+          spinOffset: i * 5 + Math.floor(Math.random() * 4),
+          outcome: pendingOutcome(t(lang, 'card_wheel_spin'), [[t(lang, 'label_bet'), formatUsd(bet)]]),
+        })),
+        imageName: 'kolo',
+        summary: t(lang, 'kolo_spinning'),
+      }));
+      await new Promise(r => setTimeout(r, 650));
     }
-
-    await new Promise(r => setTimeout(r, 350));
 
     const winnings = Math.floor(bet * result.mult);
     const isWin = winnings > bet;
@@ -135,31 +131,29 @@ export default {
       balanceLabel: t(lang, 'btn_balance'),
     });
 
-    const extra = newAchievements.length > 0
-      ? t(lang, 'new_achievements')(formatAchievementNamesInline(newAchievements)).trim()
-      : undefined;
-
-    const field = `${result.emoji} ${segmentLabel(lang, result)}`;
-
-    if (isPush) {
-      const embed = infoGameEmbed(
-        t(lang, 'kolo_title'),
-        extra ?? t(lang, 'kolo_push'),
-        { bet, result: field, balance: newData.money, lang },
-      );
-      await interaction.editReply({ embeds: [embed], components: [row] });
-      return;
-    }
-
-    const embed = gameResultEmbed({
-      title: result.mult >= 10 ? `${t(lang, 'kolo_title')} · Jackpot` : t(lang, 'kolo_title'),
-      won: isWin,
-      bet,
-      result: field,
-      balance: newData.money,
-      extra,
+    const kind = isWin ? 'win' : isPush ? 'push' : 'loss';
+    const image = await safeRender('kolo', () => renderWheel({
+      result: result.mult,
+      spinOffset: Math.floor(Math.random() * 6),
+      outcome: settledOutcome({
+        lang,
+        kind,
+        net: winnings - bet,
+        bet,
+        balance: newData.money,
+        rows: [[t(lang, 'card_field'), result.mult === 0.5 ? '½×' : `${result.mult}×`]],
+      }),
+    }));
+    await interaction.editReply(gameView({
       lang,
-    });
-    await interaction.editReply({ embeds: [embed], components: [row] });
+      title: result.mult >= 10 ? `${t(lang, 'kolo_title')} · Jackpot` : t(lang, 'kolo_title'),
+      kind,
+      image,
+      imageName: 'kolo',
+      summary: isPush ? t(lang, 'kolo_push') : `${t(lang, 'kolo_stopped')} ${t(lang, 'kolo_field')}: **${segmentLabel(lang, result)}**`,
+      fallback: `${result.emoji} ${segmentLabel(lang, result)}`,
+      achievements: newAchievements,
+      components: [row],
+    }));
   },
 };

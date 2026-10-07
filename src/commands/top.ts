@@ -5,7 +5,10 @@ import {
   StringSelectMenuBuilder,
 } from 'discord.js';
 import { CasinoBot } from '../index';
-import { EmbedHelper, getRequiredXP } from '../utils/helpers';
+import { EmbedBuilder } from 'discord.js';
+import { brandTitle, stripLeadingDecor } from '../utils/embeds';
+import { COLORS } from '../config/constants';
+import { imageAttachment, money, plainNumber, renderLeaderboard, safeRender } from '../render';
 import { withOwner } from '../utils/components';
 import { navRow } from '../utils/playerNav';
 import { getUserLang, slashLocales, slashNameLocales, t, type Lang } from '../i18n';
@@ -42,36 +45,18 @@ function sortFor(category: TopCategory, users: Ranked[]): Ranked[] {
   }
 }
 
+/** Value column - numbers only, so it reads the same in every language. */
 function rowStat(category: TopCategory, user: Ranked): string {
   switch (category) {
-    case 'level': {
-      const level = user.level || 1;
-      return `⭐ Lvl ${level} (${user.xp || 0}/${getRequiredXP(level)} XP)`;
-    }
-    case 'games':
-      return `🎮 ${(user.total_games || 0).toLocaleString()} gier`;
+    case 'level': return `Lvl ${user.level || 1}`;
+    case 'games': return plainNumber(user.total_games || 0);
     case 'wins': {
       const wins = user.total_wins || 0;
       const games = user.total_games || 0;
-      const winRate = games > 0 ? ((wins / games) * 100).toFixed(1) : '0.0';
-      return `✅ ${wins.toLocaleString()} wygranych (${winRate}%)`;
+      return `${plainNumber(wins)} · ${games > 0 ? ((wins / games) * 100).toFixed(1) : '0.0'}%`;
     }
-    case 'streak': {
-      const streak = user.daily_streak || 0;
-      return `🔥 ${streak} dni ${streak >= 7 ? '🏆' : ''}`;
-    }
-    default:
-      return `💵 $${user.money.toLocaleString()}`;
-  }
-}
-
-function selfStat(category: TopCategory, user: Ranked): string {
-  switch (category) {
-    case 'level':  return `Lvl ${user.level || 1}`;
-    case 'games':  return `${(user.total_games || 0).toLocaleString()} gier`;
-    case 'wins':   return `${(user.total_wins || 0).toLocaleString()} wygranych`;
-    case 'streak': return `${user.daily_streak || 0} dni`;
-    default:       return `$${user.money.toLocaleString()}`;
+    case 'streak': return String(user.daily_streak || 0);
+    default: return money(Number(user.money) || 0);
   }
 }
 
@@ -104,30 +89,36 @@ export async function buildTopPayload(
   const topUsers = sorted.slice(0, 10);
   const names = await Promise.allSettled(topUsers.map(u => client.users.fetch(u.user_id)));
 
-  const embed = EmbedHelper.goldEmbed(
-    t(lang, CATEGORY_META[category].titleKey),
-    t(lang, CATEGORY_META[category].descKey),
-  );
-
-  let leaderboardText = '';
-  for (let i = 0; i < topUsers.length; i++) {
-    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+  const title = t(lang, CATEGORY_META[category].titleKey);
+  const rows = topUsers.map((u, i) => {
     const fetched = names[i];
-    const label = fetched.status === 'fulfilled'
-      ? fetched.value.username
-      : `User ${topUsers[i].user_id}`;
-    leaderboardText += `${medal} **${label}**\n> ${rowStat(category, topUsers[i])}\n\n`;
-  }
-
-  embed.addFields({ name: '🏅 Ranking', value: leaderboardText || '*Brak danych*', inline: false });
-
+    const user = fetched.status === 'fulfilled' ? fetched.value : null;
+    return {
+      rank: i + 1,
+      name: user?.globalName ?? user?.username ?? `#${u.user_id.slice(-4)}`,
+      avatarUrl: user?.displayAvatarURL({ extension: 'png', size: 64 }) ?? null,
+      value: rowStat(category, u),
+      highlight: u.user_id === viewerId,
+    };
+  });
   const position = sorted.findIndex(u => u.user_id === viewerId);
-  if (position !== -1) {
-    embed.setFooter({ text: t(lang, 'top_you')(position + 1, selfStat(category, sorted[position])) });
+  const footer = position !== -1 ? t(lang, 'top_you')(position + 1, rowStat(category, sorted[position])) : undefined;
+  const image = rows.length > 0
+    ? await safeRender('top', () => renderLeaderboard(stripLeadingDecor(title), t(lang, CATEGORY_META[category].descKey), rows, footer))
+    : null;
+
+  const embed = new EmbedBuilder().setTitle(brandTitle(title)).setColor(COLORS.gold);
+  if (image) {
+    embed.setImage('attachment://top.webp');
+  } else {
+    embed.setDescription(rows.map(r => `\`${r.rank}.\` **${r.name}** - ${r.value}`).join('\n') || t(lang, 'ranking_empty'));
+    if (footer) embed.setFooter({ text: footer });
   }
 
   return {
     embeds: [embed],
+    files: image ? [imageAttachment(image, 'top')] : [],
+    attachments: [] as [],
     components: [
       categoryRow(viewerId, lang, category),
       navRow(viewerId, viewerId, lang, ['ranking', 'profil', 'balance']),

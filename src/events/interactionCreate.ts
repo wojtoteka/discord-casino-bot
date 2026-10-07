@@ -1,4 +1,4 @@
-﻿import { Interaction, Collection, ActionRowBuilder, ButtonBuilder, StringSelectMenuInteraction, ButtonInteraction, ChannelSelectMenuInteraction } from 'discord.js';
+﻿import { Interaction, Collection, ActionRowBuilder, ButtonBuilder, StringSelectMenuInteraction, ButtonInteraction, ChannelSelectMenuInteraction, ChatInputCommandInteraction } from 'discord.js';
 import { CasinoBot, Command } from '../index';
 import { EmbedHelper } from '../utils/helpers';
 import { formatUsd, gameResultEmbed, pendingEmbed, pendingList, playAgainRow } from '../utils/embeds';
@@ -9,6 +9,10 @@ import { withUserLock } from '../utils/moneyLock';
 import { InsufficientFundsError } from '../database/Database';
 import { readGuildSettings, restrictedCasinoChannelId } from '../utils/guildGate';
 import { isUnknownInteractionError } from '../utils/interactions';
+import { runWithContext } from '../utils/requestContext';
+import { gameView, settledOutcome } from '../utils/gameView';
+import { renderMines, safeRender } from '../render';
+import { maybeNotifyAdminAfterCommand } from '../utils/permissionCheck';
 
 const MAINTENANCE_ALLOWED = new Set([
   'pomoc',
@@ -72,6 +76,28 @@ async function withTimeout<T>(
     if (timer) {
       clearTimeout(timer);
     }
+  }
+}
+
+/**
+ * One private note the first time a player ever uses the bot: what they got
+ * and where to go next. Gated in the DB, so it shows exactly once.
+ */
+async function sendFirstTimeWelcome(interaction: ChatInputCommandInteraction, client: CasinoBot): Promise<void> {
+  try {
+    if (!(await client.db.markTutorialDone(interaction.user.id))) return;
+    if (!interaction.replied && !interaction.deferred) return;
+    const lang = await getUserLang(client.db, interaction.user.id);
+    const { cmd } = await import('../utils/commandMentions');
+    await interaction.followUp({
+      embeds: [EmbedHelper.goldEmbed(
+        t(lang, 'tutorial_title'),
+        t(lang, 'tutorial_desc')(cmd('kasyno'), cmd('crash-live'), cmd('daily'), cmd('ustawienia')),
+      )],
+      flags: 64,
+    });
+  } catch {
+    // A welcome must never break a command.
   }
 }
 
@@ -170,7 +196,7 @@ async function handleComponentInteraction(
       const owner  = parts[3];
       const ts     = parseInt(parts[4], 10);
       const validLang = action === 'lang' && (value === 'pl' || value === 'en');
-      const validDuel = action === 'duel' && (value === '0' || value === '1');
+      const validDuel = (action === 'duel' || action === 'remind') && (value === '0' || value === '1');
       if (parts.length < 5 || (!validLang && !validDuel)) {
         return;
       }
@@ -187,16 +213,59 @@ async function handleComponentInteraction(
       const value  = parts[2];
       const owner  = parts[3];
       const ts     = parseInt(parts[4], 10);
-      const known = action === 'channel' || action === 'clear' || action === 'duels' || action === 'refresh';
-      if (parts.length < 5 || !known) return;
+      const { handleGuildSettingsComponent, GSET_ACTIONS } = await import('../commands/ustawienia-serwera');
+      if (parts.length < 5 || !GSET_ACTIONS.has(action)) return;
       if (!(await guardComponent(interaction, owner, ts, lang))) return;
-      const { handleGuildSettingsComponent } = await import('../commands/ustawienia-serwera');
-      await handleGuildSettingsComponent(
-        interaction as ButtonInteraction | ChannelSelectMenuInteraction,
-        client,
-        action,
-        value,
-      );
+      await handleGuildSettingsComponent(interaction, client, action, value);
+      return;
+    }
+
+    // ── Public components: no owner, anyone who sees them may click ──
+    // drop:<dropId>:<suit>
+    if (customId.startsWith('drop:') && interaction.isButton()) {
+      const { handleDropButton } = await import('../utils/drops');
+      await handleDropButton(interaction, client);
+      return;
+    }
+
+    // lc:bet|custom|cash:<roundId>[:amount] · lc:new
+    if (customId.startsWith('lc:') && interaction.isButton()) {
+      const { handleLiveCrashButton } = await import('../utils/liveCrash');
+      await handleLiveCrashButton(interaction, client);
+      return;
+    }
+
+    // jp:buy:<roundId>:<count>
+    if (customId.startsWith('jp:') && interaction.isButton()) {
+      const { handleJackpotButton } = await import('../utils/jackpot');
+      await handleJackpotButton(interaction, client);
+      return;
+    }
+
+    // gwel:lang:<pl|en> · gwel:setup - the welcome post after the bot joins
+    if (customId.startsWith('gwel:') && interaction.isButton()) {
+      const { handleWelcomeButton } = await import('./guildCreate');
+      await handleWelcomeButton(interaction, client);
+      return;
+    }
+
+    // vip:claim:<owner>:<ts>
+    if (customId.startsWith('vip:') && interaction.isButton()) {
+      const parts = customId.split(':');
+      if (!(await guardComponent(interaction, parts[2], parseInt(parts[3], 10), lang))) return;
+      const { handleVipButton } = await import('../commands/vip');
+      await handleVipButton(interaction, client);
+      return;
+    }
+
+    // shop:pick:<owner>:<ts> · shop:buy|equip:<theme>:<owner>:<ts>
+    if (customId.startsWith('shop:') && (interaction.isButton() || interaction.isStringSelectMenu())) {
+      const parts = customId.split(':');
+      const owner = parts[parts.length - 2];
+      const ts = parseInt(parts[parts.length - 1], 10);
+      if (!(await guardComponent(interaction, owner, ts, lang))) return;
+      const { handleShopComponent } = await import('../commands/sklep');
+      await handleShopComponent(interaction, client);
       return;
     }
 
@@ -286,6 +355,7 @@ async function handleComponentInteraction(
 
       const { createMainEmbed, createGamesEmbed, createEconomyEmbed, createProgressEmbed, createSettingsEmbed, buildHelpSelectMenu } =
         await import('../commands/help');
+      const { linkRow } = await import('../commands/kasyno');
       const value = (interaction as any).values[0] as string;
       let newEmbed;
       switch (value) {
@@ -296,7 +366,7 @@ async function handleComponentInteraction(
         default:         newEmbed = createMainEmbed(interaction.user.username, lang);
       }
       // Re-issue the menu with the same owner so it stays valid for its lifetime.
-      await (interaction as any).update({ embeds: [newEmbed], components: [buildHelpSelectMenu(owner, lang)] });
+      await (interaction as any).update({ embeds: [newEmbed], components: [buildHelpSelectMenu(owner, lang), linkRow(lang)] });
       return;
     }
 
@@ -630,6 +700,14 @@ async function handleNavigation(
     await interaction.reply({ content: `Unknown navigation target: ${target}`, flags: 64 });
     return;
   }
+  if (await client.db.isUserBlocked(interaction.user.id)) {
+    const lang = await getUserLang(client.db, interaction.user.id);
+    await interaction.reply({
+      embeds: [EmbedHelper.errorEmbed(t(lang, 'blocked_title'), t(lang, 'blocked')(''))],
+      flags: 64,
+    });
+    return;
+  }
   // Defer FIRST - before any API/DB work so Discord acknowledges immediately
   try {
     await interaction.deferReply();
@@ -681,7 +759,7 @@ async function handleMinesAction(
   if (action === 'cashout') {
     await interaction.deferUpdate();
     await withUserLock(interaction.user.id, async () => {
-      // Read the session BEFORE cashing out so we can offer "play again" with the same settings.
+      // Read the session BEFORE cashing out so the result shows its real board and multiplier.
       const active  = await client.db.getActiveMinesSession(interaction.user.id);
       let payout: number;
       try {
@@ -694,20 +772,40 @@ async function handleMinesAction(
         });
         return;
       }
-      const multi   = '?';  // session ended, exact stored in cashoutMines
-      const balance = (await client.db.getUser(interaction.user.id)).money;
       const bet = active?.bet ?? 0;
-        const embed   = gameResultEmbed({
-        title: t(lang, 'mines_title'),
-        won: true,
-        bet,
-        result: formatUsd(payout),
-        balance,
-        extra: t(lang, 'mines_cashed_out')(multi, payout),
+      const minesCount = active?.mines_count ?? 3;
+      const revealedCount = active?.revealed_positions.length ?? 0;
+      const multi = client.db.calcMinesMultiplier(minesCount, revealedCount).toFixed(2);
+      const balance = (await client.db.getUser(interaction.user.id)).money;
+      const achievements = await client.db.checkAchievements(interaction.user.id);
+      const image = active ? await safeRender('mines', () => renderMines({
+        cols: 5,
+        rows: GAMES.mines.gridSize / 5,
+        mines: active.mines_positions,
+        revealed: active.revealed_positions,
+        revealAll: true,
+        outcome: settledOutcome({
+          lang,
+          kind: 'win',
+          net: payout - bet,
+          bet,
+          balance,
+          rows: [
+            [t(lang, 'card_mult'), `×${multi}`],
+            [t(lang, 'card_revealed'), `${revealedCount}/${GAMES.mines.gridSize - minesCount}`],
+          ],
+        }),
+      })) : null;
+      await interaction.editReply(gameView({
         lang,
-      });
-      const againRow = buildMinesPlayAgainRow(interaction.user.id, active?.bet ?? 0, active?.mines_count ?? 3, lang);
-      await interaction.editReply({ embeds: [embed], components: [againRow] });
+        title: t(lang, 'mines_title'),
+        kind: 'win',
+        image,
+        imageName: 'mines',
+        summary: t(lang, 'mines_cashed_out')(multi, payout),
+        achievements,
+        components: [buildMinesPlayAgainRow(interaction.user.id, bet, minesCount, lang)],
+      }));
     });
     return;
   }
@@ -728,31 +826,49 @@ async function handleMinesAction(
       }
 
       if (!safe) {
-        const components = buildMinesGrid(session, true, sessionId, interaction.user.id, true);
-        components[0] = buildMinesPlayAgainRow(
-          interaction.user.id,
-          session.bet,
-          session.mines_count,
-          lang,
-        );
         const balance = (await client.db.getUser(interaction.user.id)).money;
-        const embed = gameResultEmbed({
-          title: t(lang, 'mines_title'),
-          won: false,
-          bet: session.bet,
-          result: t(lang, 'mines_hit'),
-          balance,
-          extra: t(lang, 'mines_exploded')(session.bet),
+        const image = await safeRender('mines', () => renderMines({
+          cols: 5,
+          rows: GAMES.mines.gridSize / 5,
+          mines: session.mines_positions,
+          revealed: session.revealed_positions,
+          hit: position,
+          revealAll: true,
+          outcome: settledOutcome({
+            lang,
+            kind: 'loss',
+            net: -session.bet,
+            bet: session.bet,
+            balance,
+            rows: [
+              [t(lang, 'card_mines'), String(session.mines_count)],
+              [t(lang, 'card_revealed'), `${session.revealed_positions.length}/${GAMES.mines.gridSize - session.mines_count}`],
+            ],
+          }),
+        }));
+        const view = gameView({
           lang,
+          title: t(lang, 'mines_title'),
+          kind: 'loss',
+          image,
+          imageName: 'mines',
+          summary: t(lang, 'mines_exploded')(session.bet),
+          components: [buildMinesPlayAgainRow(interaction.user.id, session.bet, session.mines_count, lang)],
         });
-        await interaction.editReply({ embeds: [embed], components });
+        // Without the picture, keep the revealed grid so the player still sees the board.
+        if (!image) {
+          const grid = buildMinesGrid(session, true, sessionId, interaction.user.id, true, lang);
+          grid[0] = buildMinesPlayAgainRow(interaction.user.id, session.bet, session.mines_count, lang);
+          view.components = grid;
+        }
+        await interaction.editReply(view);
         return;
       }
 
       const multi     = client.db.calcMinesMultiplier(session.mines_count, session.revealed_positions.length);
       const multiStr  = multi.toFixed(2);
       const potential = Math.floor(session.bet * multi);
-      const components = buildMinesGrid(session, false, sessionId, interaction.user.id);
+      const components = buildMinesGrid(session, false, sessionId, interaction.user.id, false, lang);
 
       const embed = pendingEmbed(
         t(lang, 'mines_title'),
@@ -775,6 +891,16 @@ async function handleMinesAction(
 export default {
   name: 'interactionCreate',
   async execute(interaction: Interaction) {
+    // Every handler below runs inside this context, so recordGame and
+    // getUserLang know which server the interaction came from.
+    await runWithContext(
+      { guildId: interaction.guildId ?? null, channelId: interaction.channelId ?? null },
+      () => handleInteraction(interaction),
+    );
+  },
+};
+
+async function handleInteraction(interaction: Interaction): Promise<void> {
     const client = interaction.client as CasinoBot;
 
     // Set DEBUG_INTERACTIONS=1 in .env to confirm interactions reach the gateway
@@ -792,6 +918,9 @@ export default {
         if (interaction.customId.startsWith('report_form:')) {
           const { handleReportModal } = await import('../commands/zgloszenie');
           await handleReportModal(interaction, client);
+        } else if (interaction.customId.startsWith('lc_modal:')) {
+          const { handleLiveCrashModal } = await import('../utils/liveCrash');
+          await handleLiveCrashModal(interaction, client);
         }
         return;
       }
@@ -960,6 +1089,8 @@ export default {
 
       try {
         await command.execute(interaction);
+        void sendFirstTimeWelcome(interaction, client);
+        void maybeNotifyAdminAfterCommand(interaction, client);
       } catch (error) {
         // Silently ignore expired/already-replied interactions - these are normal race conditions
         if (isUnknownInteractionError(error)) return;
@@ -983,5 +1114,4 @@ export default {
 
       console.error('[ROYALCASINO] Nieoczekiwany blad interactionCreate:', error);
     }
-  },
-};
+}

@@ -1,17 +1,24 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
-import { ChatInputCommandInteraction } from 'discord.js';
+import { ChatInputCommandInteraction, EmbedBuilder } from 'discord.js';
 import { CasinoBot } from '../index';
-import { EmbedHelper } from '../utils/helpers';
-import { ACHIEVEMENT_NAMES, formatAchievementReward } from '../utils/achievements';
+import { ACHIEVEMENT_NAMES, achievementText, formatAchievementReward } from '../utils/achievements';
 import { navRow } from '../utils/playerNav';
 import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
+import { brandTitle } from '../utils/embeds';
+import { COLORS } from '../config/constants';
+import { imageAttachment, renderAchievements, safeRender } from '../render';
+
+const ORDER = [
+  'first_game', 'games_10', 'games_50', 'games_100', 'first_win', 'wins_10', 'wins_50',
+  'level_5', 'level_10', 'level_25', 'millionaire', 'big_win', 'streak_7', 'high_roller',
+];
 
 export default {
   data: new SlashCommandBuilder()
     .setName('achievementy')
     .setNameLocalizations(slashNameLocales('achievements'))
-    .setDescription('🏅 Zobacz wszystkie osiągnięcia do zdobycia')
-    .setDescriptionLocalizations(slashLocales('🏅 Browse all achievements'))
+    .setDescription('🏅 Gablota z osiągnięciami i nagrodami')
+    .setDescriptionLocalizations(slashLocales('🏅 Achievement cabinet and rewards'))
     .addUserOption(option =>
       option
         .setName('użytkownik')
@@ -25,54 +32,49 @@ export default {
     const client = interaction.client as CasinoBot;
     const lang = await getUserLang(client.db, interaction.user.id);
     const targetUser = interaction.options.getUser('użytkownik') || interaction.user;
-    const userId = targetUser.id;
 
     await interaction.deferReply();
 
     try {
-      const unlockedAchievements = await client.db.getUserAchievements(userId);
-      const totalAchievements = Object.keys(ACHIEVEMENT_NAMES).length;
-      const pct = Math.floor((unlockedAchievements.length / totalAchievements) * 100);
+      const unlocked = new Set(await client.db.getUserAchievements(targetUser.id));
+      const ids = ORDER.filter(id => ACHIEVEMENT_NAMES[id]);
+      const have = ids.filter(id => unlocked.has(id)).length;
 
-      const embed = EmbedHelper.goldEmbed(
-        t(lang, 'ach_title')(targetUser.username),
-        t(lang, 'ach_progress')(unlockedAchievements.length, totalAchievements, pct),
-      );
+      const image = await safeRender('achievements', () => renderAchievements({
+        title: t(lang, 'ach_card_title'),
+        subtitle: t(lang, 'ach_card_sub')(have, ids.length),
+        lang,
+        medals: ids.map(id => ({
+          id,
+          name: achievementText(id, lang).name,
+          unlocked: unlocked.has(id),
+          reward: formatAchievementReward(ACHIEVEMENT_NAMES[id]),
+        })),
+      }));
 
-      const categories: Record<string, string[]> = {
-        [t(lang, 'ach_cat_player')]: ['first_game', 'games_10', 'games_50', 'games_100'],
-        [t(lang, 'ach_cat_wins')]: ['first_win', 'wins_10', 'wins_50'],
-        [t(lang, 'ach_cat_levels')]: ['level_5', 'level_10', 'level_25'],
-        [t(lang, 'ach_cat_special')]: ['millionaire', 'big_win', 'streak_7', 'high_roller'],
-      };
+      // Descriptions of what is still locked - the picture shows names, this says how to get them.
+      const next = ids.filter(id => !unlocked.has(id)).slice(0, 4).map(id => {
+        const text = achievementText(id, lang);
+        return `🔒 **${text.name}** - ${text.description}`;
+      });
 
-      for (const [category, achievementIds] of Object.entries(categories)) {
-        const achievementsText = achievementIds.map(id => {
-          const ach = ACHIEVEMENT_NAMES[id];
-          const unlocked = unlockedAchievements.includes(id);
-          const reward = formatAchievementReward(ach);
-          const rewardLine = reward ? `\n${t(lang, 'ach_reward')}: ${reward}` : '';
-          if (unlocked) {
-            return `${ach.emoji} **${ach.name}** ✅\n*${ach.description}*${rewardLine}`;
-          }
-          return `🔒 **${ach.name}**\n*${ach.description}*${rewardLine}`;
-        }).join('\n\n');
-
+      const embed = new EmbedBuilder()
+        .setTitle(brandTitle(t(lang, 'ach_title')(targetUser.username)))
+        .setColor(COLORS.gold)
+        .setDescription(next.length > 0 ? next.join('\n') : t(lang, 'ach_progress')(have, ids.length, 100));
+      if (image) {
+        embed.setImage('attachment://achievements.webp');
+      } else {
         embed.addFields({
-          name: category,
-          value: achievementsText,
-          inline: false,
+          name: t(lang, 'ach_card_sub')(have, ids.length),
+          value: ids.map(id => `${unlocked.has(id) ? '✅' : '🔒'} ${achievementText(id, lang).name}`).join('\n'),
         });
       }
 
-      embed.setFooter({ text: t(lang, 'ach_footer') });
-      embed.setTimestamp();
-
       await interaction.editReply({
         embeds: [embed],
-        components: [navRow(interaction.user.id, targetUser.id, lang, [
-          'profil', 'balance', 'questy',
-        ])],
+        files: image ? [imageAttachment(image, 'achievements')] : [],
+        components: [navRow(interaction.user.id, targetUser.id, lang, ['profil', 'balance', 'questy'])],
       });
     } catch (error) {
       console.error('Błąd achievementów:', error);

@@ -1,19 +1,35 @@
-﻿import { SlashCommandBuilder } from '@discordjs/builders';
-import { ChatInputCommandInteraction, ActionRowBuilder, ButtonBuilder } from 'discord.js';
+import { SlashCommandBuilder } from '@discordjs/builders';
+import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonInteraction,
+  ChatInputCommandInteraction,
+  EmbedBuilder,
+} from 'discord.js';
 import { ButtonStyle, ComponentType } from 'discord-api-types/v10';
 import { CasinoBot } from '../index';
 import { EmbedHelper, GameHelper } from '../utils/helpers';
 import { formatAchievementNamesInline } from '../utils/achievements';
 import { withOwner } from '../utils/components';
-import { BlackjackGame } from '../utils/games';
-import { formatUsd, gameResultEmbed, infoGameEmbed, pendingEmbed, pendingList, playAgainRow } from '../utils/embeds';
-import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
+import { BlackjackGame, type Card } from '../utils/games';
+import { brandTitle, formatUsd, playAgainRow } from '../utils/embeds';
+import { getUserLang, slashLocales, slashNameLocales, t, type Lang } from '../i18n';
 import { InsufficientFundsError } from '../database/Database';
 import { withUserLock } from '../utils/moneyLock';
+import { COLORS, GAMES } from '../config/constants';
+import {
+  imageAttachment, renderBlackjackTable, safeRender, suitFromSymbol,
+  type BlackjackOutcome, type CardFace,
+} from '../render';
 
 const activeGames = new Map<string, BlackjackGame>();
+const DECISION_MS = 120_000;
 
-function bjPlayAgainRow(bet: number, userId: string, lang: 'pl' | 'en') {
+function face(card: Card): CardFace {
+  return { rank: card.name, suit: suitFromSymbol(card.suit) };
+}
+
+function bjPlayAgainRow(bet: number, userId: string, lang: Lang) {
   return playAgainRow({
     customIdPlayAgain: withOwner(`play_again:blackjack:${bet}`, userId),
     customIdBalance: withOwner(`nav:balance:${userId}`, userId),
@@ -22,25 +38,125 @@ function bjPlayAgainRow(bet: number, userId: string, lang: 'pl' | 'en') {
   });
 }
 
-function handDetails(game: BlackjackGame, hideDealer = false): Array<[string, string]> {
-  const dealer = game.formatHand(game.getDealerHand(), hideDealer)
-    + (hideDealer ? '' : ` (**${game.getDealerScore()}**)`);
-  return [
-    ['Twoja ręka', `${game.formatHand(game.getPlayerHand())} (**${game.getPlayerScore()}**)`],
-    ['Krupier', dealer],
-  ];
+function decisionRow(lang: Lang, canDouble: boolean): ActionRowBuilder<ButtonBuilder> {
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId('hit').setLabel(t(lang, 'bj_hit')).setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('stand').setLabel(t(lang, 'bj_stand')).setStyle(ButtonStyle.Success),
+  );
+  if (canDouble) {
+    row.addComponents(
+      new ButtonBuilder().setCustomId('double').setLabel(t(lang, 'bj_double')).setStyle(ButtonStyle.Secondary),
+    );
+  }
+  return row;
 }
 
-function noteExtra(...parts: Array<string | undefined>): string | undefined {
-  const lines = parts.filter((p): p is string => Boolean(p && p.trim()));
-  return lines.length > 0 ? lines.join('\n') : undefined;
+interface TableState {
+  game: BlackjackGame;
+  bet: number;
+  doubled: boolean;
+  outcome?: { kind: BlackjackOutcome; net: number };
+}
+
+async function tablePayload(
+  state: TableState,
+  lang: Lang,
+  opts: { description: string; color: number; components: ActionRowBuilder<ButtonBuilder>[]; balance?: number },
+) {
+  const { game } = state;
+  const settled = Boolean(state.outcome);
+  const image = await safeRender('blackjack', () => renderBlackjackTable({
+    dealer: game.getDealerHand().map((card, i) => (!settled && i === 0 ? null : face(card))),
+    player: game.getPlayerHand().map(face),
+    dealerScore: settled ? String(game.getDealerScore()) : '?',
+    playerScore: String(game.getPlayerScore()),
+    bet: state.bet,
+    doubled: state.doubled,
+    outcome: state.outcome,
+  }, lang));
+
+  const lines = [opts.description];
+  if (!image) {
+    lines.push(
+      '',
+      `${t(lang, 'bj_you')}: ${game.formatHand(game.getPlayerHand())} (**${game.getPlayerScore()}**)`,
+      `${t(lang, 'bj_dealer')}: ${game.formatHand(game.getDealerHand(), !settled)}` +
+        (settled ? ` (**${game.getDealerScore()}**)` : ''),
+    );
+  }
+  const embed = new EmbedBuilder()
+    .setTitle(brandTitle('Blackjack'))
+    .setColor(opts.color)
+    .setDescription(lines.join('\n'));
+  if (opts.balance != null) embed.setFooter({ text: t(lang, 'bj_footer_balance')(formatUsd(opts.balance)) });
+  if (image) embed.setImage('attachment://blackjack.webp');
+
+  return {
+    embeds: [embed],
+    components: opts.components,
+    files: image ? [imageAttachment(image, 'blackjack')] : [],
+    attachments: [],
+  };
+}
+
+/** Pays out and records a finished hand. Returns the settled outcome. */
+async function settle(
+  client: CasinoBot,
+  userId: string,
+  state: TableState,
+): Promise<{ kind: BlackjackOutcome; net: number; achievements: string[] }> {
+  const { game, doubled } = state;
+  const stake = state.bet * (doubled ? 2 : 1);
+  const playerBj = game.isPlayerBlackjack() && !doubled;
+  const dealerBj = game.isDealerBlackjack();
+
+  let kind: BlackjackOutcome;
+  let payout = 0;
+  if (game.isPlayerBust()) {
+    kind = 'bust';
+  } else if (playerBj && dealerBj) {
+    kind = 'push';
+    payout = stake;
+  } else if (playerBj) {
+    kind = 'blackjack';
+    payout = Math.floor(stake * GAMES.blackjack.naturalMultiplier);
+  } else {
+    const result = game.getGameResult();
+    if (result === 'win') {
+      kind = 'win';
+      payout = stake * 2;
+    } else if (result === 'tie') {
+      kind = 'push';
+      payout = stake;
+    } else {
+      kind = 'loss';
+    }
+  }
+
+  await withUserLock(userId, async () => {
+    if (payout > 0) await client.db.updateMoney(userId, payout);
+    const recorded = kind === 'push' ? 'tie' : payout > stake ? 'win' : 'loss';
+    await client.db.recordGame(userId, 'blackjack', stake, payout, recorded);
+  });
+  const achievements = await client.db.checkAchievements(userId);
+  return { kind, net: payout - stake, achievements };
+}
+
+function outcomeText(lang: Lang, kind: BlackjackOutcome, net: number): string {
+  switch (kind) {
+    case 'blackjack': return t(lang, 'bj_result_blackjack')(formatUsd(net));
+    case 'win': return t(lang, 'bj_result_win')(formatUsd(net));
+    case 'push': return t(lang, 'bj_result_push');
+    case 'bust': return t(lang, 'bj_result_bust')(formatUsd(-net));
+    default: return t(lang, 'bj_result_loss')(formatUsd(-net));
+  }
 }
 
 export default {
   data: new SlashCommandBuilder()
     .setName('blackjack')
-    .setDescription('🃏 Zagraj w blackjacka - cel: 21 punktów!')
-    .setDescriptionLocalizations(slashLocales('🃏 Play blackjack - hit 21'))
+    .setDescription('🃏 Blackjack przy stole krupiera - dobierz, pasuj albo podwój')
+    .setDescriptionLocalizations(slashLocales('🃏 Blackjack against the dealer - hit, stand or double'))
     .addIntegerOption(option =>
       option
         .setName('zakład')
@@ -48,38 +164,33 @@ export default {
         .setDescription('Kwota do postawienia (min. $100)')
         .setDescriptionLocalizations(slashLocales('Amount to bet (min. $100)'))
         .setRequired(true)
-        .setMinValue(100)
+        .setMinValue(100),
     ),
 
   async execute(interaction: ChatInputCommandInteraction) {
     const client = interaction.client as CasinoBot;
     const bet = interaction.options.getInteger('zakład', true);
     const userId = interaction.user.id;
-
     const lang = await getUserLang(client.db, userId);
     const userData = await client.db.getUser(userId);
 
     if (!GameHelper.canAfford(userData.money, bet)) {
-      const embed = EmbedHelper.errorEmbed(
-        t(lang, 'insufficient_funds_title'),
-        t(lang, 'error_insufficient_funds')(bet, userData.money),
-      );
-      await interaction.reply({ embeds: [embed], flags: 64 });
+      await interaction.reply({
+        embeds: [EmbedHelper.errorEmbed(t(lang, 'insufficient_funds_title'), t(lang, 'error_insufficient_funds')(bet, userData.money))],
+        flags: 64,
+      });
       return;
     }
-
     if (activeGames.has(userId)) {
-      const embed = EmbedHelper.warningEmbed(
-        t(lang, 'game_in_progress_title'),
-        t(lang, 'game_in_progress'),
-      );
-      await interaction.reply({ embeds: [embed], flags: 64 });
+      await interaction.reply({
+        embeds: [EmbedHelper.warningEmbed(t(lang, 'game_in_progress_title'), t(lang, 'game_in_progress'))],
+        flags: 64,
+      });
       return;
     }
 
     const game = new BlackjackGame();
     activeGames.set(userId, game);
-
     try {
       await withUserLock(userId, () => client.db.updateMoney(userId, -bet));
     } catch (error) {
@@ -87,10 +198,7 @@ export default {
       if (error instanceof InsufficientFundsError) {
         const latest = await client.db.getUser(userId);
         await interaction.reply({
-          embeds: [EmbedHelper.errorEmbed(
-            t(lang, 'insufficient_funds_title'),
-            t(lang, 'error_insufficient_funds')(bet, latest.money),
-          )],
+          embeds: [EmbedHelper.errorEmbed(t(lang, 'insufficient_funds_title'), t(lang, 'error_insufficient_funds')(bet, latest.money))],
           flags: 64,
         });
         return;
@@ -98,205 +206,110 @@ export default {
       throw error;
     }
 
-    const embed = createGameEmbed(game, bet);
-    const buttons = createGameButtons();
+    const state: TableState = { game, bet, doubled: false };
 
-    if (game.isPlayerBlackjack()) {
-      const winnings = Math.floor(bet * 2.5);
-      await withUserLock(userId, async () => {
-        await client.db.updateMoney(userId, winnings);
-        await client.db.recordGame(userId, 'blackjack', bet, winnings, 'win');
-      });
-      const newAchievements = await client.db.checkAchievements(userId);
+    const finish = async (
+      respond: (payload: Awaited<ReturnType<typeof tablePayload>>) => Promise<unknown>,
+      note?: string,
+    ) => {
+      // The dealer draws only when the hand is still live - not after a bust or a natural.
+      if (!game.isPlayerBust() && !game.isPlayerBlackjack()) game.stand();
+      const result = await settle(client, userId, state);
       activeGames.delete(userId);
+      state.outcome = { kind: result.kind, net: result.net };
+      const balance = (await client.db.getUser(userId)).money;
+      const extra = [
+        note,
+        outcomeText(lang, result.kind, result.net),
+        result.achievements.length > 0
+          ? t(lang, 'new_achievements')(formatAchievementNamesInline(result.achievements)).trim()
+          : undefined,
+      ].filter(Boolean).join('\n');
+      const good = result.kind === 'win' || result.kind === 'blackjack';
+      await respond(await tablePayload(state, lang, {
+        description: extra,
+        color: good ? COLORS.success : result.kind === 'push' ? COLORS.gold : COLORS.error,
+        components: [bjPlayAgainRow(bet, userId, lang)],
+        balance,
+      }));
+    };
 
-      const netProfit = winnings - bet;
-      const newData = await client.db.getUser(userId);
-      const blackjackEmbed = gameResultEmbed({
-        title: 'Blackjack',
-        won: true,
-        bet,
-        result: `+$${netProfit.toLocaleString()}`,
-        balance: newData.money,
-        details: handDetails(game),
-        extra: noteExtra(
-          'Blackjack · **1.5x** zysku',
-          newAchievements.length > 0
-            ? `Nowe osiągnięcia: ${formatAchievementNamesInline(newAchievements)}`
-            : undefined,
-        ),
-      });
-      await interaction.reply({ embeds: [blackjackEmbed], components: [bjPlayAgainRow(bet, userId, lang)] });
+    // A natural ends the hand before the player acts.
+    if (game.isPlayerBlackjack()) {
+      await finish(payload => interaction.reply(payload));
       return;
     }
 
-    await interaction.reply({ embeds: [embed], components: [buttons] });
+    const canDouble = () =>
+      game.getPlayerHand().length === 2 && !state.doubled;
+
+    await interaction.reply(await tablePayload(state, lang, {
+      description: t(lang, 'bj_prompt'),
+      color: COLORS.info,
+      components: [decisionRow(lang, canDouble())],
+    }));
     const reply = await interaction.fetchReply();
 
     let busy = false;
     let settled = false;
-
     const collector = reply.createMessageComponentCollector({
       componentType: ComponentType.Button,
-      time: 120000,
-      filter: (i: any) => i.user.id === userId
+      time: DECISION_MS,
+      filter: (i: ButtonInteraction) => i.user.id === userId && ['hit', 'stand', 'double'].includes(i.customId),
     });
 
-    collector?.on('collect', async (buttonInteraction: any) => {
-      if (settled || busy) return;
+    collector.on('collect', async (button: ButtonInteraction) => {
+      if (settled || busy) {
+        await button.deferUpdate().catch(() => {});
+        return;
+      }
       busy = true;
-
       try {
-        if (buttonInteraction.customId === 'hit') {
-          if (game.isPlayerBust()) {
-            await buttonInteraction.reply({
-              content: '❌ Nie możesz już dobierać kart.',
-              flags: 64
-            });
+        if (button.customId === 'double') {
+          if (!canDouble()) {
+            await button.deferUpdate();
             return;
           }
-
+          try {
+            await withUserLock(userId, () => client.db.updateMoney(userId, -bet));
+          } catch (error) {
+            if (error instanceof InsufficientFundsError) {
+              const latest = await client.db.getUser(userId);
+              await button.reply({
+                embeds: [EmbedHelper.errorEmbed(t(lang, 'insufficient_funds_title'), t(lang, 'error_insufficient_funds')(bet, latest.money))],
+                flags: 64,
+              });
+              return;
+            }
+            throw error;
+          }
+          state.doubled = true;
           game.hit();
-
-          if (game.isPlayerBust()) {
-            settled = true;
-            await client.db.recordGame(userId, 'blackjack', bet, 0, 'loss');
-            await client.db.checkAchievements(userId);
-            activeGames.delete(userId);
-
-            const newData = await client.db.getUser(userId);
-            const bustEmbed = gameResultEmbed({
-              title: 'Blackjack',
-              won: false,
-              bet,
-              result: `Powyżej 21 · -$${bet.toLocaleString()}`,
-              balance: newData.money,
-              details: handDetails(game, true),
-            });
-            await buttonInteraction.update({ embeds: [bustEmbed], components: [bjPlayAgainRow(bet, userId, lang)] });
-            collector.stop('bust');
-            return;
-          }
-
-          if (game.getPlayerScore() === 21) {
-            settled = true;
-            game.stand();
-            const result = game.getGameResult();
-
-            let resultEmbed: any;
-            if (result === 'win') {
-              const winAmount = bet * 2;
-              await client.db.updateMoney(userId, winAmount);
-              await client.db.recordGame(userId, 'blackjack', bet, winAmount, 'win');
-              const newAchievements = await client.db.checkAchievements(userId);
-              const newData = await client.db.getUser(userId);
-              resultEmbed = gameResultEmbed({
-                title: 'Blackjack',
-                won: true,
-                bet,
-                result: `+$${bet.toLocaleString()}`,
-                balance: newData.money,
-                details: handDetails(game),
-                extra: noteExtra(
-                  'Perfekcyjne 21',
-                  newAchievements.length > 0
-                    ? `Nowe osiągnięcia: ${formatAchievementNamesInline(newAchievements)}`
-                    : undefined,
-                ),
-              });
-            } else if (result === 'tie') {
-              await client.db.updateMoney(userId, bet);
-              await client.db.recordGame(userId, 'blackjack', bet, bet, 'tie');
-              await client.db.checkAchievements(userId);
-              const newData = await client.db.getUser(userId);
-              resultEmbed = infoGameEmbed(
-                'Blackjack',
-                'Remis - zwrot zakładu.',
-                { bet, result: 'Remis', balance: newData.money, details: handDetails(game) },
-              );
-            } else {
-              await client.db.recordGame(userId, 'blackjack', bet, 0, 'loss');
-              await client.db.checkAchievements(userId);
-              const newData = await client.db.getUser(userId);
-              resultEmbed = gameResultEmbed({
-                title: 'Blackjack',
-                won: false,
-                bet,
-                result: `-$${bet.toLocaleString()}`,
-                balance: newData.money,
-                details: handDetails(game),
-              });
-            }
-
-            activeGames.delete(userId);
-            await buttonInteraction.update({ embeds: [resultEmbed], components: [bjPlayAgainRow(bet, userId, lang)] });
-            collector.stop('twentyone');
-            return;
-          }
-
-          const updatedEmbed = createGameEmbed(game, bet);
-          await buttonInteraction.update({ embeds: [updatedEmbed], components: [buttons] });
-
-        } else if (buttonInteraction.customId === 'stand') {
           settled = true;
-          game.stand();
-          const result = game.getGameResult();
-
-          let resultEmbed: any;
-          switch (result) {
-            case 'win': {
-              const winAmount = bet * 2;
-              await client.db.updateMoney(userId, winAmount);
-              await client.db.recordGame(userId, 'blackjack', bet, winAmount, 'win');
-              const newAchievements = await client.db.checkAchievements(userId);
-              const newData = await client.db.getUser(userId);
-              resultEmbed = gameResultEmbed({
-                title: 'Blackjack',
-                won: true,
-                bet,
-                result: `+$${bet.toLocaleString()}`,
-                balance: newData.money,
-                details: handDetails(game),
-                extra: newAchievements.length > 0
-                  ? `Nowe osiągnięcia: ${formatAchievementNamesInline(newAchievements)}`
-                  : undefined,
-              });
-              break;
-            }
-            case 'lose': {
-              await client.db.recordGame(userId, 'blackjack', bet, 0, 'loss');
-              await client.db.checkAchievements(userId);
-              const newData = await client.db.getUser(userId);
-              resultEmbed = gameResultEmbed({
-                title: 'Blackjack',
-                won: false,
-                bet,
-                result: `-$${bet.toLocaleString()}`,
-                balance: newData.money,
-                details: handDetails(game),
-              });
-              break;
-            }
-            case 'tie': {
-              await client.db.updateMoney(userId, bet);
-              await client.db.recordGame(userId, 'blackjack', bet, bet, 'tie');
-              await client.db.checkAchievements(userId);
-              const newData = await client.db.getUser(userId);
-              resultEmbed = infoGameEmbed(
-                'Blackjack',
-                'Remis - zwrot zakładu.',
-                { bet, result: 'Remis', balance: newData.money, details: handDetails(game) },
-              );
-              break;
-            }
-            default:
-              resultEmbed = EmbedHelper.errorEmbed('Błąd', 'Coś poszło nie tak.');
-          }
-
-          activeGames.delete(userId);
-          await buttonInteraction.update({ embeds: [resultEmbed], components: [bjPlayAgainRow(bet, userId, lang)] });
-          collector.stop('stand');
+          await finish(payload => button.update(payload), t(lang, 'bj_doubled_note'));
+          collector.stop('done');
+          return;
         }
+
+        if (button.customId === 'hit') {
+          game.hit();
+          if (game.isPlayerBust() || game.getPlayerScore() === 21) {
+            settled = true;
+            await finish(payload => button.update(payload));
+            collector.stop('done');
+            return;
+          }
+          await button.update(await tablePayload(state, lang, {
+            description: t(lang, 'bj_prompt'),
+            color: COLORS.info,
+            components: [decisionRow(lang, canDouble())],
+          }));
+          return;
+        }
+
+        settled = true;
+        await finish(payload => button.update(payload));
+        collector.stop('done');
       } catch (error: any) {
         if (error?.code === 10062) return;
         throw error;
@@ -305,61 +318,18 @@ export default {
       }
     });
 
-    collector?.on('end', async (collected, reason) => {
-      if (reason === 'time' && activeGames.has(userId)) {
-        await client.db.recordGame(userId, 'blackjack', bet, 0, 'loss');
-        await client.db.checkAchievements(userId);
-        activeGames.delete(userId);
-
-        const newData = await client.db.getUser(userId);
-        const timeoutEmbed = gameResultEmbed({
-          title: 'Blackjack',
-          won: false,
-          bet,
-          result: 'Czas minął',
-          balance: newData.money,
-          extra: 'Czas minął (2 minuty). Zakład przepadł.',
-        });
-
-        try {
-          await interaction.editReply({ embeds: [timeoutEmbed], components: [bjPlayAgainRow(bet, userId, lang)] });
-        } catch {
-          // Ignore error if message was already deleted
-        }
-      } else {
+    collector.on('end', async (_collected, reason) => {
+      if (reason !== 'time' || settled || !activeGames.has(userId)) {
+        if (settled) activeGames.delete(userId);
+        return;
+      }
+      // Walking away is a stand, not a forfeit - the hand is played out.
+      settled = true;
+      try {
+        await finish(payload => interaction.editReply(payload), t(lang, 'bj_timeout_note'));
+      } catch {
         activeGames.delete(userId);
       }
     });
   },
 };
-
-function createGameEmbed(game: BlackjackGame, bet: number) {
-  return pendingEmbed(
-    'Blackjack',
-    pendingList(
-      'Dobierz albo pasuj.',
-      [
-        ['Twoja ręka', `${game.formatHand(game.getPlayerHand())} (**${game.getPlayerScore()}**)`],
-        ['Krupier', game.formatHand(game.getDealerHand(), true)],
-        ['Zakład', formatUsd(bet)],
-      ],
-      'Cel: 21 punktów albo więcej niż krupier.',
-    ),
-  );
-}
-
-function createGameButtons() {
-  return new ActionRowBuilder<ButtonBuilder>()
-    .addComponents(
-      new ButtonBuilder()
-        .setCustomId('hit')
-        .setLabel('🎴 Dobierz')
-        .setStyle(ButtonStyle.Primary)
-        .setEmoji('➕'),
-      new ButtonBuilder()
-        .setCustomId('stand')
-        .setLabel('✋ Pasuj')
-        .setStyle(ButtonStyle.Success)
-        .setEmoji('🛑')
-    );
-}

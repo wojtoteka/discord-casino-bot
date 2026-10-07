@@ -2,11 +2,12 @@ import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction } from 'discord.js';
 import { CasinoBot } from '../index';
 import { EmbedHelper, GameHelper } from '../utils/helpers';
-import { formatAchievementNamesInline } from '../utils/achievements';
 import { withOwner } from '../utils/components';
 import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
 import { GAMES } from '../config/constants';
-import { gameResultEmbed, pendingEmbed, pendingList, playAgainRow } from '../utils/embeds';
+import { formatUsd, playAgainRow } from '../utils/embeds';
+import { gameView, pendingOutcome, settledOutcome, symbolLabel } from '../utils/gameView';
+import { renderSlots, symbolFromEmoji, safeRender } from '../render';
 import { InsufficientFundsError } from '../database/Database';
 import { withUserLock } from '../utils/moneyLock';
 
@@ -90,37 +91,39 @@ export default {
     const reel2 = GameHelper.getRandomChoice(symbolPool);
     const reel3 = GameHelper.getRandomChoice(symbolPool);
 
-    const spinFrames = ['🎰 × 🎰 × 🎰', '🔄 × 🔄 × 🔄', '🎲 × 🎲 × 🎲'];
-    for (const frame of spinFrames) {
-      await interaction.editReply({
-        embeds: [pendingEmbed(
-          t(lang, 'slots_title'),
-          pendingList(t(lang, 'slots_spinning'), [[t(lang, 'label_bet'), `${bet}`]], frame),
-        )],
-      });
-      await new Promise(resolve => setTimeout(resolve, 300));
-    }
+    await interaction.editReply(gameView({
+      lang,
+      title: t(lang, 'slots_title'),
+      kind: 'pending',
+      image: await safeRender('slots', () => renderSlots({
+        reels: null,
+        outcome: pendingOutcome(t(lang, 'card_reels'), [[t(lang, 'label_bet'), `${bet} ${t(lang, 'card_credits_short')}`]]),
+      })),
+      imageName: 'slots',
+      summary: t(lang, 'slots_spinning'),
+    }));
+    await new Promise(resolve => setTimeout(resolve, 900));
 
     let winnings = 0;
-    let extra = '';
+    let combo = t(lang, 'card_nothing');
+    let summary = t(lang, 'slots_none');
+    const winning = [false, false, false];
 
     if (reel1 === reel2 && reel2 === reel3) {
       const multiplier = payouts[reel1];
       winnings = multiplier * bet;
-      extra = reel1 === '💎'
-        ? t(lang, 'slots_jackpot')
-        : t(lang, 'slots_triple')(reel1, multiplier);
+      combo = t(lang, 'card_triple')(symbolLabel(lang, symbolFromEmoji(reel1)));
+      summary = reel1 === '💎' ? t(lang, 'slots_jackpot') : t(lang, 'slots_triple')(reel1, multiplier);
+      winning.fill(true);
     } else if (reel1 === reel2 || reel2 === reel3 || reel1 === reel3) {
       const matchedSymbol = reel1 === reel2 ? reel1 : (reel2 === reel3 ? reel2 : reel1);
       const multiplier = twoOfKindMultiplier[matchedSymbol];
       if (multiplier > 0) {
         winnings = multiplier * bet;
-        extra = t(lang, 'slots_two');
-      } else {
-        extra = t(lang, 'slots_none');
+        combo = t(lang, 'card_pair')(symbolLabel(lang, symbolFromEmoji(matchedSymbol)));
+        summary = t(lang, 'slots_two');
+        [reel1, reel2, reel3].forEach((r, i) => { winning[i] = r === matchedSymbol; });
       }
-    } else {
-      extra = t(lang, 'slots_none');
     }
 
     const won = winnings > bet;
@@ -138,24 +141,6 @@ export default {
     const newAchievements = await client.db.checkAchievements(userId);
     const newUserData = await client.db.getUser(userId);
 
-    if (newAchievements.length > 0) {
-      extra += t(lang, 'new_achievements')(formatAchievementNamesInline(newAchievements));
-    }
-    extra += won
-      ? `\n${t(lang, 'slots_win')(winnings - bet, newUserData.credits)}`
-      : `\n${t(lang, 'slots_loss')(newUserData.credits)}`;
-
-    const embed = gameResultEmbed({
-      title: t(lang, 'slots_title'),
-      won,
-      bet,
-      result: `${reel1} ${reel2} ${reel3}`,
-      balance: newUserData.credits,
-      extra,
-      unit: 'credits',
-      lang,
-    });
-
     const row = playAgainRow({
       customIdPlayAgain: withOwner(`play_again:slots:${bet}`, userId),
       customIdBalance: withOwner(`nav:balance:${userId}`, userId),
@@ -163,6 +148,31 @@ export default {
       balanceLabel: t(lang, 'btn_balance'),
     });
 
-    await interaction.editReply({ content: '', embeds: [embed], components: [row] });
+    const kind = result === 'win' ? 'win' : result === 'tie' ? 'push' : 'loss';
+    const image = await safeRender('slots', () => renderSlots({
+      reels: [reel1, reel2, reel3].map(symbolFromEmoji),
+      winning,
+      outcome: settledOutcome({
+        lang,
+        kind,
+        net: winnings - bet,
+        bet,
+        balance: newUserData.credits,
+        unit: 'credits',
+        rows: [[t(lang, 'card_combo'), combo]],
+      }),
+    }));
+
+    await interaction.editReply(gameView({
+      lang,
+      title: t(lang, 'slots_title'),
+      kind,
+      image,
+      imageName: 'slots',
+      summary,
+      fallback: `${reel1} ${reel2} ${reel3}`,
+      achievements: newAchievements,
+      components: [row],
+    }));
   },
 };

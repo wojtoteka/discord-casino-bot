@@ -66,3 +66,27 @@ export function formatAchievementNamesLines(ids: string[]): string {
     return `${info.emoji} ${info.name}`;
   }).join('\n');
 }
+
+/** English names for the same achievements - the Polish table above stays the source of rewards. */
+const ACHIEVEMENT_TEXT_EN: Record<string, { name: string; description: string }> = {
+  first_game:  { name: 'First game',     description: 'Play your first game' },
+  games_10:    { name: 'Regular',        description: 'Play 10 games' },
+  games_50:    { name: 'Veteran',        description: 'Play 50 games' },
+  games_100:   { name: 'Legend',         description: 'Play 100 games' },
+  first_win:   { name: 'First win',      description: 'Win your first game' },
+  wins_10:     { name: 'Winner',         description: 'Win 10 games' },
+  wins_50:     { name: 'Master',         description: 'Win 50 games' },
+  level_5:     { name: 'Level 5',        description: 'Reach level 5' },
+  level_10:    { name: 'Level 10',       description: 'Reach level 10' },
+  level_25:    { name: 'Level 25',       description: 'Reach level 25' },
+  millionaire: { name: 'Millionaire',    description: 'Hold $1,000,000' },
+  big_win:     { name: 'Big win',        description: 'Win $10,000 in one game' },
+  streak_7:    { name: 'Devoted',        description: 'A 7-day daily streak' },
+  high_roller: { name: 'High roller',    description: 'Wager $100,000 in total' },
+};
+
+export function achievementText(id: string, lang: 'pl' | 'en'): { name: string; description: string } {
+  if (lang === 'en' && ACHIEVEMENT_TEXT_EN[id]) return ACHIEVEMENT_TEXT_EN[id];
+  const info = getAchievementInfo(id);
+  return { name: info.name, description: info.description };
+}

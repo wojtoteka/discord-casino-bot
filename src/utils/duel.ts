@@ -6,6 +6,7 @@ import {
   ButtonStyle,
   EmbedBuilder,
 } from 'discord.js';
+import { imageAttachment, renderDuel, safeRender } from '../render';
 import { Database } from '../database/Database';
 import { BRAND, COLORS } from '../config/constants';
 import { getUserLang, t, type Lang } from '../i18n';
@@ -282,7 +283,7 @@ function isIgnorableInteractionError(error: unknown): boolean {
 
 async function ackUpdate(
   interaction: ButtonInteraction,
-  payload: { content?: string; embeds: any[]; components: any[] },
+  payload: { content?: string; embeds: any[]; components: any[]; files?: any[]; attachments?: any[] },
 ): Promise<void> {
   try {
     if (interaction.replied || interaction.deferred) {
@@ -600,9 +601,41 @@ export async function handleDuelButton(
       loserAchievements: result.loserAchievements,
     });
 
+    // Challenger on the left, opponent on the right - the picture keeps the seats.
+    const [challengerUser, opponentUser] = await Promise.all([
+      interaction.client.users.fetch(challenge.challengerId).catch(() => null),
+      interaction.client.users.fetch(challenge.opponentId).catch(() => null),
+    ]);
+    const image = await safeRender('duel', () => renderDuel({
+      left: {
+        name: challengerUser?.globalName ?? challengerUser?.username ?? (result.winnerId === challenge.challengerId ? winnerName : loserName),
+        avatarUrl: challengerUser?.displayAvatarURL({ extension: 'png', size: 256 }) ?? null,
+      },
+      right: {
+        name: opponentUser?.globalName ?? opponentUser?.username ?? (result.winnerId === challenge.opponentId ? winnerName : loserName),
+        avatarUrl: opponentUser?.displayAvatarURL({ extension: 'png', size: 256 }) ?? null,
+      },
+      winner: result.winnerId === challenge.challengerId ? 'left' : 'right',
+      pot: result.pool,
+      potLabel: t(publicLang, 'card_pot'),
+      outcome: {
+        kind: 'win',
+        headline: t(publicLang, 'card_winner'),
+        amount: `+${formatUsd(result.pool - challenge.bet)}`,
+        rows: [
+          [t(publicLang, 'card_winner'), winnerName],
+          [t(publicLang, 'card_stake'), formatUsd(challenge.bet)],
+          [t(publicLang, 'card_pot'), formatUsd(result.pool)],
+        ],
+      },
+    }));
+    if (image) embed.setImage('attachment://duel.webp');
+
     await ackUpdate(interaction, {
       content: t(publicLang, 'duel_win_content')(result.winnerId),
       embeds: [embed],
+      files: image ? [imageAttachment(image, 'duel')] : [],
+      attachments: [],
       components: [buildDuelResultRow({
         challengerId: challenge.challengerId,
         opponentId: challenge.opponentId,

@@ -2,10 +2,28 @@
 import { ChatInputCommandInteraction } from 'discord.js';
 import { CasinoBot } from '../index';
 import { EmbedHelper, GameHelper } from '../utils/helpers';
-import { formatAchievementNamesInline } from '../utils/achievements';
 import { withOwner } from '../utils/components';
 import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
-import { formatUsd, gameResultEmbed, pendingEmbed, pendingList, playAgainRow } from '../utils/embeds';
+import { formatUsd, playAgainRow } from '../utils/embeds';
+import { gameView, pendingOutcome, settledOutcome } from '../utils/gameView';
+import { renderRoulette, safeRender } from '../render';
+import type { Lang } from '../i18n';
+
+function rouletteTypeLabel(lang: Lang, betType: string, number: number | null): string {
+  switch (betType) {
+    case 'red': return t(lang, 'card_rl_red');
+    case 'black': return t(lang, 'card_rl_black');
+    case 'zero': return t(lang, 'card_rl_zero');
+    case 'number': return t(lang, 'card_rl_number')(number ?? 0);
+    case 'even': return t(lang, 'card_rl_even');
+    case 'odd': return t(lang, 'card_rl_odd');
+    case 'low': return '1-18';
+    case 'high': return '19-36';
+    case 'dozen1': return '1-12';
+    case 'dozen2': return '13-24';
+    default: return '25-36';
+  }
+}
 import { InsufficientFundsError } from '../database/Database';
 import { withUserLock } from '../utils/moneyLock';
 
@@ -102,16 +120,22 @@ export default {
       throw error;
     }
 
-    const spinFrames = ['🔴 × ⚫ × 🔴', '⚫ × 🔴 × ⚫', '🔴 × ⚫ × 🔴', '⚫ × 🔴 × ⚫'];
-    for (const frame of spinFrames) {
-      await interaction.editReply({
-        embeds: [pendingEmbed(
-          t(lang, 'roulette_title'),
-          pendingList(t(lang, 'roulette_spinning'), [[t(lang, 'label_bet'), formatUsd(bet)]], frame),
-        )],
-      });
-      await new Promise(resolve => setTimeout(resolve, 400));
-    }
+    const typeLabel = rouletteTypeLabel(lang, betType, number);
+    await interaction.editReply(gameView({
+      lang,
+      title: t(lang, 'roulette_title'),
+      kind: 'pending',
+      image: await safeRender('roulette', () => renderRoulette({
+        result: null,
+        outcome: pendingOutcome(t(lang, 'card_roulette_spin'), [
+          [t(lang, 'label_bet'), formatUsd(bet)],
+          [t(lang, 'card_type'), typeLabel],
+        ]),
+      })),
+      imageName: 'roulette',
+      summary: t(lang, 'roulette_spinning'),
+    }));
+    await new Promise(resolve => setTimeout(resolve, 1100));
 
     const result = Math.floor(Math.random() * 37);
     const redNumbers = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
@@ -123,20 +147,19 @@ export default {
 
     let won = false;
     let multiplier = 0;
-    let winDescription = '';
 
     switch (betType) {
-      case 'red':    won = isRed; multiplier = 2; winDescription = '🔴 Czerwony'; break;
-      case 'black':  won = isBlack; multiplier = 2; winDescription = '⚫ Czarny'; break;
-      case 'zero':   won = result === 0; multiplier = 35; winDescription = '🟢 Zero'; break;
-      case 'number': won = result === number; multiplier = 35; winDescription = `🎯 ${number}`; break;
-      case 'even':   won = isEven; multiplier = 2; winDescription = '📊 Parzysta'; break;
-      case 'odd':    won = isOdd; multiplier = 2; winDescription = '📊 Nieparzysta'; break;
-      case 'low':    won = result >= 1 && result <= 18; multiplier = 2; winDescription = '🔽 1-18'; break;
-      case 'high':   won = result >= 19 && result <= 36; multiplier = 2; winDescription = '🔼 19-36'; break;
-      case 'dozen1': won = result >= 1 && result <= 12; multiplier = 3; winDescription = '1-12'; break;
-      case 'dozen2': won = result >= 13 && result <= 24; multiplier = 3; winDescription = '13-24'; break;
-      case 'dozen3': won = result >= 25 && result <= 36; multiplier = 3; winDescription = '25-36'; break;
+      case 'red':    won = isRed; multiplier = 2; break;
+      case 'black':  won = isBlack; multiplier = 2; break;
+      case 'zero':   won = result === 0; multiplier = 35; break;
+      case 'number': won = result === number; multiplier = 35; break;
+      case 'even':   won = isEven; multiplier = 2; break;
+      case 'odd':    won = isOdd; multiplier = 2; break;
+      case 'low':    won = result >= 1 && result <= 18; multiplier = 2; break;
+      case 'high':   won = result >= 19 && result <= 36; multiplier = 2; break;
+      case 'dozen1': won = result >= 1 && result <= 12; multiplier = 3; break;
+      case 'dozen2': won = result >= 13 && result <= 24; multiplier = 3; break;
+      case 'dozen3': won = result >= 25 && result <= 36; multiplier = 3; break;
     }
 
     const payout = won ? bet * multiplier : 0;
@@ -152,38 +175,14 @@ export default {
     });
 
     const newAchievements = await client.db.checkAchievements(userId);
-    const extraParts = [won ? t(lang, 'roulette_hit')(multiplier) : t(lang, 'roulette_miss')];
-    if (newAchievements.length > 0) {
-      extraParts.push(t(lang, 'new_achievements')(formatAchievementNamesInline(newAchievements)).trim());
-    }
-
-    let resultColor = '🟢';
-    let resultText = t(lang, 'roulette_zero');
-    if (result !== 0) {
-      if (isRed) {
-        resultColor = '🔴';
-        resultText = t(lang, 'roulette_red')(result);
-      } else {
-        resultColor = '⚫';
-        resultText = t(lang, 'roulette_black')(result);
-      }
-    }
+    const resultText = result === 0
+      ? t(lang, 'roulette_zero')
+      : isRed ? t(lang, 'roulette_red')(result) : t(lang, 'roulette_black')(result);
 
     const newUserData = await client.db.getUser(userId);
     const extraId = betType === 'number' && number
       ? `number:${number}`
       : betType;
-
-    const embed = gameResultEmbed({
-      title: t(lang, 'roulette_title'),
-      won,
-      bet,
-      result: `${resultColor} ${resultText}`,
-      balance: newUserData.money,
-      details: [[t(lang, 'roulette_your_bet'), winDescription]],
-      extra: extraParts.join('\n'),
-      lang,
-    });
 
     const row = playAgainRow({
       customIdPlayAgain: withOwner(`play_again:ruletka:${bet}:${extraId}`, userId),
@@ -192,6 +191,32 @@ export default {
       balanceLabel: t(lang, 'btn_balance'),
     });
 
-    await interaction.editReply({ content: '', embeds: [embed], components: [row] });
+    const kind = won ? 'win' : 'loss';
+    const image = await safeRender('roulette', () => renderRoulette({
+      result,
+      outcome: settledOutcome({
+        lang,
+        kind,
+        net: payout - bet,
+        bet,
+        balance: newUserData.money,
+        rows: [
+          [t(lang, 'card_type'), typeLabel],
+          [t(lang, 'card_result'), resultText],
+        ],
+      }),
+    }));
+
+    await interaction.editReply(gameView({
+      lang,
+      title: t(lang, 'roulette_title'),
+      kind,
+      image,
+      imageName: 'roulette',
+      summary: won ? t(lang, 'roulette_hit')(multiplier) : t(lang, 'roulette_miss'),
+      fallback: `${resultText} · ${formatUsd(newUserData.money)}`,
+      achievements: newAchievements,
+      components: [row],
+    }));
   },
 };

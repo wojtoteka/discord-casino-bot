@@ -2,11 +2,12 @@
 import { ChatInputCommandInteraction } from 'discord.js';
 import { CasinoBot } from '../index';
 import { EmbedHelper, GameHelper } from '../utils/helpers';
-import { formatAchievementNamesInline } from '../utils/achievements';
 import { withOwner } from '../utils/components';
 import { getUserLang, slashLocales, slashNameLocales, t } from '../i18n';
 import { GAMES } from '../config/constants';
-import { formatUsd, gameResultEmbed, pendingEmbed, pendingList, playAgainRow } from '../utils/embeds';
+import { formatUsd, playAgainRow } from '../utils/embeds';
+import { gameView, pendingOutcome, settledOutcome, symbolLabel } from '../utils/gameView';
+import { renderWar, suitFromSymbol, safeRender } from '../render';
 import { InsufficientFundsError } from '../database/Database';
 import { withUserLock } from '../utils/moneyLock';
 
@@ -23,6 +24,10 @@ function drawCard(): { value: string; suit: string; rank: number } {
   const value = VALUES[Math.floor(Math.random() * VALUES.length)];
   const suit = SUITS[Math.floor(Math.random() * SUITS.length)];
   return { value, suit, rank: VALUE_MAP[value] };
+}
+
+function face(card: { value: string; suit: string }) {
+  return { rank: card.value, suit: suitFromSymbol(card.suit) };
 }
 
 function formatCard(card: { value: string; suit: string }): string {
@@ -98,13 +103,43 @@ export default {
         throw error;
       }
 
-      await interaction.editReply({
-        embeds: [pendingEmbed(
-          t(lang, 'war_title'),
-          pendingList(t(lang, 'war_dealing'), [[t(lang, 'label_bet'), formatUsd(bet)]]),
-        )],
+      const view = async (kind: 'win' | 'loss' | 'pending', parts: {
+        player: ReturnType<typeof drawCard> | null;
+        dealer: ReturnType<typeof drawCard> | null;
+        tied?: { player: ReturnType<typeof drawCard>; dealer: ReturnType<typeof drawCard> };
+        outcome: Parameters<typeof renderWar>[0]['outcome'];
+        summary: string;
+        components?: ReturnType<typeof warAgainRow>[];
+        achievements?: string[];
+      }) => gameView({
+        lang,
+        title: t(lang, 'war_title'),
+        kind,
+        image: await safeRender('war', () => renderWar({
+          player: parts.player ? face(parts.player) : null,
+          dealer: parts.dealer ? face(parts.dealer) : null,
+          youLabel: t(lang, 'card_you'),
+          dealerLabel: t(lang, 'card_dealer'),
+          tied: parts.tied
+            ? { player: face(parts.tied.player), dealer: face(parts.tied.dealer), label: t(lang, 'card_war_tied')(parts.tied.player.value) }
+            : undefined,
+          winner: kind === 'win' ? 'player' : kind === 'loss' ? 'dealer' : undefined,
+          outcome: parts.outcome,
+        })),
+        imageName: 'war',
+        summary: parts.summary,
+        fallback: parts.player && parts.dealer ? `${formatCard(parts.player)} vs ${formatCard(parts.dealer)}` : undefined,
+        achievements: parts.achievements,
+        components: parts.components,
       });
-      await new Promise(r => setTimeout(r, 1200));
+
+      await interaction.editReply(await view('pending', {
+        player: null,
+        dealer: null,
+        outcome: pendingOutcome(t(lang, 'card_dealing'), [[t(lang, 'label_bet'), formatUsd(bet)]]),
+        summary: t(lang, 'war_dealing'),
+      }));
+      await new Promise(r => setTimeout(r, 1000));
 
       const playerCard = drawCard();
       const dealerCard = drawCard();
@@ -113,18 +148,12 @@ export default {
       const tieMulti = GAMES.war.tieMultiplier;
 
       if (playerCard.rank === dealerCard.rank) {
-        await interaction.editReply({
-          embeds: [pendingEmbed(
-            t(lang, 'war_title'),
-            pendingList(
-              t(lang, 'war_war_incoming')(bet * 2),
-              [
-                [t(lang, 'war_player_card'), formatCard(playerCard)],
-                [t(lang, 'war_dealer_card'), formatCard(dealerCard)],
-              ],
-            ),
-          )],
-        });
+        await interaction.editReply(await view('pending', {
+          player: playerCard,
+          dealer: dealerCard,
+          outcome: pendingOutcome(t(lang, 'card_war_tied')(playerCard.value), [[t(lang, 'label_bet'), formatUsd(bet * 2)]]),
+          summary: t(lang, 'war_war_incoming')(bet * 2),
+        }));
         await new Promise(r => setTimeout(r, 1500));
 
         let matched = true;
@@ -138,9 +167,6 @@ export default {
           }
         }
 
-        const extraRound =
-          `Runda: ${formatCard(playerCard)} vs ${formatCard(dealerCard)} → remis`;
-
         if (!matched) {
           await withUserLock(userId, async () => {
             await client.db.recordGame(userId, 'war', bet, 0, 'loss');
@@ -148,16 +174,13 @@ export default {
           });
           await client.db.checkAchievements(userId);
           const newData = await client.db.getUser(userId);
-          const embed = gameResultEmbed({
-            title: t(lang, 'war_title'),
-            won: false,
-            bet,
-            result: t(lang, 'war_loss')(bet),
-            balance: newData.money,
-            extra: `${extraRound}\n${t(lang, 'war_cant_match')}`,
-            lang,
-          });
-          await interaction.editReply({ embeds: [embed], components: [row] });
+          await interaction.editReply(await view('loss', {
+            player: playerCard,
+            dealer: dealerCard,
+            outcome: settledOutcome({ lang, kind: 'loss', net: -bet, bet, balance: newData.money }),
+            summary: t(lang, 'war_cant_match'),
+            components: [row],
+          }));
           return;
         }
 
@@ -179,22 +202,15 @@ export default {
         const newAchievements = await client.db.checkAchievements(userId);
         const newData = await client.db.getUser(userId);
 
-        let extra =
-          `${extraRound}\nWojna: ${formatCard(warPlayerCard)} vs ${formatCard(warDealerCard)}`;
-        if (warWon && newAchievements.length > 0) {
-          extra += t(lang, 'new_achievements')(formatAchievementNamesInline(newAchievements));
-        }
-
-        const embed = gameResultEmbed({
-          title: t(lang, 'war_title'),
-          won: warWon,
-          bet: totalBet,
-          result: warWon ? t(lang, 'war_win')(bet, tieMulti) : t(lang, 'war_loss')(totalBet),
-          balance: newData.money,
-          extra,
-          lang,
-        });
-        await interaction.editReply({ embeds: [embed], components: [row] });
+        await interaction.editReply(await view(warWon ? 'win' : 'loss', {
+          player: warPlayerCard,
+          dealer: warDealerCard,
+          tied: { player: playerCard, dealer: dealerCard },
+          outcome: settledOutcome({ lang, kind: warWon ? 'win' : 'loss', net: payout - totalBet, bet: totalBet, balance: newData.money }),
+          summary: warWon ? t(lang, 'war_win')(bet, tieMulti) : t(lang, 'war_loss')(totalBet),
+          achievements: warWon ? newAchievements : undefined,
+          components: [row],
+        }));
         return;
       }
 
@@ -213,21 +229,14 @@ export default {
       const newAchievements = await client.db.checkAchievements(userId);
       const newData = await client.db.getUser(userId);
 
-      let extra = `Ty: ${formatCard(playerCard)}\nKrupier: ${formatCard(dealerCard)}`;
-      if (won && newAchievements.length > 0) {
-        extra += t(lang, 'new_achievements')(formatAchievementNamesInline(newAchievements));
-      }
-
-      const embed = gameResultEmbed({
-        title: t(lang, 'war_title'),
-        won,
-        bet,
-        result: won ? t(lang, 'war_win')(bet, winMulti) : t(lang, 'war_loss')(bet),
-        balance: newData.money,
-        extra,
-        lang,
-      });
-      await interaction.editReply({ embeds: [embed], components: [row] });
+      await interaction.editReply(await view(won ? 'win' : 'loss', {
+        player: playerCard,
+        dealer: dealerCard,
+        outcome: settledOutcome({ lang, kind: won ? 'win' : 'loss', net: payout - bet, bet, balance: newData.money }),
+        summary: won ? t(lang, 'war_win')(bet, winMulti) : t(lang, 'war_loss')(bet),
+        achievements: won ? newAchievements : undefined,
+        components: [row],
+      }));
     } finally {
       activeWar.delete(userId);
     }
