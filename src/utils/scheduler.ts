@@ -6,6 +6,7 @@ import { brandTitle, formatUsd } from './embeds';
 import { EmbedHelper } from './helpers';
 import { jackpotTick } from './jackpot';
 import { permissionReminderTick } from './permissionCheck';
+import { guildInfoTick, profileBackfillTick, webActionTick } from './webBridge';
 
 /** Opt-in DMs (`/ustawienia`) once a player's 12h top.gg cooldown ends. */
 async function voteReminderTick(client: CasinoBot): Promise<void> {
@@ -48,11 +49,10 @@ export function startScheduler(client: CasinoBot): void {
   // Server names and icons for the website: once the cache is warm, then every 6 hours.
   setTimeout(() => { void guildInfoTick(client); }, 60_000);
   setInterval(() => { void guildInfoTick(client); }, 6 * 60 * 60_000);
-}
-
-async function guildInfoTick(client: CasinoBot): Promise<void> {
-  for (const guild of client.guilds.cache.values()) {
-    if (!guild.available) continue;
-    await client.db.syncGuildInfo({ id: guild.id, name: guild.name, icon: guild.icon, memberCount: guild.memberCount });
-  }
+  // Web admin panel: queued actions (DM, report reply...) every few seconds,
+  // nick/avatar backfill for players who have not used the bot since the update.
+  setInterval(() => { void webActionTick(client).catch(e => console.error('[ROYALCASINO] Akcje z panelu WWW:', e)); }, 4_000);
+  setTimeout(() => { void profileBackfillTick(client); }, 90_000);
+  setInterval(() => { void profileBackfillTick(client); }, 2 * 60_000);
+  setInterval(() => { void client.db.pruneWebActions(); }, 60 * 60_000);
 }

@@ -2882,6 +2882,22 @@ export class Database extends EventEmitter {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
+    // Actions queued by the web admin panel (wojtoteka.ovh/admin/royal) that need
+    // the bot itself: DMs, report replies, profile refresh. Run by utils/webBridge.ts.
+    await this.pool.execute(`
+      CREATE TABLE IF NOT EXISTS web_actions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        action VARCHAR(30) NOT NULL,
+        target_id VARCHAR(20) NULL,
+        payload TEXT NULL,
+        status VARCHAR(10) NOT NULL DEFAULT 'pending',
+        result TEXT NULL,
+        created_at BIGINT NOT NULL,
+        done_at BIGINT NOT NULL DEFAULT 0,
+        INDEX idx_web_actions_status (status, id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
     // One-off: players who already played know the bot, skip the first-game welcome.
     if ((await this.getBotSetting('migr_v4_tutorial')) !== '1') {
       await tryExec(`UPDATE users SET tutorial_done = 1 WHERE total_games > 0`);
@@ -2900,19 +2916,22 @@ export class Database extends EventEmitter {
    * existing account - using the bot without playing does not create one.
    * Never throws: the website is the only reader and a failed write is harmless.
    */
-  public async syncUserProfile(user: {
-    id: string;
-    username: string;
-    globalName: string | null;
-    avatar: string | null;
-  }): Promise<void> {
+  public async syncUserProfile(
+    user: {
+      id: string;
+      username: string;
+      globalName: string | null;
+      avatar: string | null;
+    },
+    options?: { force?: boolean },
+  ): Promise<void> {
     const username = String(user.username ?? '').slice(0, 32);
     const displayName = user.globalName ? String(user.globalName).slice(0, 64) : null;
     const avatar = user.avatar ? String(user.avatar).slice(0, 64) : null;
     const sig = `${username}|${displayName ?? ''}|${avatar ?? ''}`;
     const now = Date.now();
     const last = this.profileSyncCache.get(user.id);
-    if (last && last.sig === sig && now - last.at < 6 * 60 * 60 * 1000) return;
+    if (!options?.force && last && last.sig === sig && now - last.at < 6 * 60 * 60 * 1000) return;
     this.profileSyncCache.set(user.id, { sig, at: now });
     try {
       const [result] = await this.pool.execute(
@@ -2925,6 +2944,78 @@ export class Database extends EventEmitter {
       // Columns missing on an old schema or DB hiccup - try again next time.
       this.profileSyncCache.delete(user.id);
     }
+  }
+
+  /**
+   * Players whose nick/avatar the bot should fetch in the background: never
+   * fetched (retried daily, e.g. after a failed fetch) or older than two weeks.
+   * Richest first, so the public ranking fills in before anyone else.
+   */
+  public async listProfilesToSync(limit: number): Promise<string[]> {
+    const now = Date.now();
+    try {
+      const [rows] = await this.pool.execute(
+        `SELECT user_id FROM users
+         WHERE (username IS NULL AND profile_synced_at < ?) OR profile_synced_at < ?
+         ORDER BY money DESC LIMIT ?`,
+        [now - 24 * 60 * 60 * 1000, now - 14 * 24 * 60 * 60 * 1000, Math.max(1, Math.trunc(limit))],
+      );
+      return (rows as Array<{ user_id: string }>).map(r => String(r.user_id));
+    } catch {
+      return [];
+    }
+  }
+
+  /** Discord did not return the user (deleted account) - do not ask again for a day. */
+  public async markProfileSyncFailed(userId: string): Promise<void> {
+    try {
+      await this.pool.execute('UPDATE users SET profile_synced_at = ? WHERE user_id = ?', [Date.now(), userId]);
+    } catch {}
+  }
+
+  // ── Website → bot action queue (web_actions) ────────────────
+  /** Takes up to `limit` pending actions and marks them running, so no action runs twice. */
+  public async claimWebActions(limit: number): Promise<Array<{ id: number; action: string; target_id: string | null; payload: string | null }>> {
+    try {
+      const [rows] = await this.pool.execute(
+        `SELECT id, action, target_id, payload FROM web_actions WHERE status = 'pending' ORDER BY id LIMIT ?`,
+        [Math.max(1, Math.trunc(limit))],
+      );
+      const claimed: Array<{ id: number; action: string; target_id: string | null; payload: string | null }> = [];
+      for (const row of rows as any[]) {
+        const [result] = await this.pool.execute(
+          `UPDATE web_actions SET status = 'running' WHERE id = ? AND status = 'pending'`,
+          [row.id],
+        );
+        if (affectedRows(result) === 1) {
+          claimed.push({ id: Number(row.id), action: String(row.action), target_id: row.target_id ? String(row.target_id) : null, payload: row.payload ? String(row.payload) : null });
+        }
+      }
+      return claimed;
+    } catch {
+      return [];
+    }
+  }
+
+  public async finishWebAction(id: number, ok: boolean, result: string): Promise<void> {
+    try {
+      await this.pool.execute(
+        'UPDATE web_actions SET status = ?, result = ?, done_at = ? WHERE id = ?',
+        [ok ? 'done' : 'failed', result.slice(0, 2000), Date.now(), id],
+      );
+    } catch {}
+  }
+
+  /** Old queue entries are only history - keep a month. Stale `running` ones (crash) are failed. */
+  public async pruneWebActions(): Promise<void> {
+    const now = Date.now();
+    try {
+      await this.pool.execute('DELETE FROM web_actions WHERE created_at < ?', [now - 30 * 24 * 60 * 60 * 1000]);
+      await this.pool.execute(
+        `UPDATE web_actions SET status = 'failed', result = 'Przerwane (restart bota)', done_at = ? WHERE status = 'running' AND created_at < ?`,
+        [now, now - 10 * 60 * 1000],
+      );
+    } catch {}
   }
 
   /** Server name, icon and size for the website. `left` marks that the bot was removed. */
