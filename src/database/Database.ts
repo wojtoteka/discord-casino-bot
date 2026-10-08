@@ -2809,6 +2809,22 @@ export class Database extends EventEmitter {
     await tryExec(`ALTER TABLE users ADD COLUMN vote_reminded_at BIGINT NOT NULL DEFAULT 0`);
     await tryExec(`ALTER TABLE users ADD COLUMN tutorial_done TINYINT NOT NULL DEFAULT 0`);
 
+    // Nick and avatar for the website (rankings on wojtoteka.ovh, admin panel).
+    // Written by syncUserProfile when a player uses the bot.
+    await tryExec(`ALTER TABLE users ADD COLUMN username VARCHAR(32) NULL`);
+    await tryExec(`ALTER TABLE users ADD COLUMN display_name VARCHAR(64) NULL`);
+    await tryExec(`ALTER TABLE users ADD COLUMN avatar VARCHAR(64) NULL`);
+    await tryExec(`ALTER TABLE users ADD COLUMN profile_synced_at BIGINT NOT NULL DEFAULT 0`);
+    // 1 = left out of the public rankings on the website (set from the web admin panel).
+    await tryExec(`ALTER TABLE users ADD COLUMN web_hidden TINYINT NOT NULL DEFAULT 0`);
+    await tryExec(`ALTER TABLE users ADD INDEX idx_users_username (username)`);
+
+    // Server name and icon for the server-vs-server ranking and the web admin panel.
+    await tryExec(`ALTER TABLE guild_settings ADD COLUMN name VARCHAR(100) NULL`);
+    await tryExec(`ALTER TABLE guild_settings ADD COLUMN icon VARCHAR(64) NULL`);
+    await tryExec(`ALTER TABLE guild_settings ADD COLUMN member_count INT NOT NULL DEFAULT 0`);
+    await tryExec(`ALTER TABLE guild_settings ADD COLUMN left_at BIGINT NOT NULL DEFAULT 0`);
+
     await this.pool.execute(`
       CREATE TABLE IF NOT EXISTS drops (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -2873,6 +2889,67 @@ export class Database extends EventEmitter {
     }
 
     console.log('✅ Tabele v4 gotowe (drops, jackpot_rounds, jackpot_tickets, live_bets)');
+  }
+
+  // ── Profile data for the website ────────────────────────────
+  /** Last written nick/avatar per user, so an active player costs one UPDATE per few hours. */
+  private readonly profileSyncCache = new Map<string, { sig: string; at: number }>();
+
+  /**
+   * Stores the player's current Discord nick and avatar hash. Only updates an
+   * existing account - using the bot without playing does not create one.
+   * Never throws: the website is the only reader and a failed write is harmless.
+   */
+  public async syncUserProfile(user: {
+    id: string;
+    username: string;
+    globalName: string | null;
+    avatar: string | null;
+  }): Promise<void> {
+    const username = String(user.username ?? '').slice(0, 32);
+    const displayName = user.globalName ? String(user.globalName).slice(0, 64) : null;
+    const avatar = user.avatar ? String(user.avatar).slice(0, 64) : null;
+    const sig = `${username}|${displayName ?? ''}|${avatar ?? ''}`;
+    const now = Date.now();
+    const last = this.profileSyncCache.get(user.id);
+    if (last && last.sig === sig && now - last.at < 6 * 60 * 60 * 1000) return;
+    this.profileSyncCache.set(user.id, { sig, at: now });
+    try {
+      const [result] = await this.pool.execute(
+        'UPDATE users SET username = ?, display_name = ?, avatar = ?, profile_synced_at = ? WHERE user_id = ?',
+        [username || null, displayName, avatar, now, user.id],
+      );
+      // No account yet (first command) - retry on the next interaction, when it exists.
+      if (affectedRows(result) === 0) this.profileSyncCache.delete(user.id);
+    } catch {
+      // Columns missing on an old schema or DB hiccup - try again next time.
+      this.profileSyncCache.delete(user.id);
+    }
+  }
+
+  /** Server name, icon and size for the website. `left` marks that the bot was removed. */
+  public async syncGuildInfo(
+    guild: { id: string; name: string | null; icon: string | null; memberCount: number | null },
+    options?: { left?: boolean },
+  ): Promise<void> {
+    const name = guild.name ? String(guild.name).slice(0, 100) : null;
+    const icon = guild.icon ? String(guild.icon).slice(0, 64) : null;
+    const members = Math.max(0, Math.trunc(Number(guild.memberCount) || 0));
+    const leftAt = options?.left ? Date.now() : 0;
+    try {
+      await this.pool.execute(
+        `INSERT INTO guild_settings (guild_id, name, icon, member_count, left_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           name = COALESCE(VALUES(name), name),
+           icon = IF(VALUES(left_at) > 0, icon, VALUES(icon)),
+           member_count = IF(VALUES(member_count) > 0, VALUES(member_count), member_count),
+           left_at = VALUES(left_at)`,
+        [guild.id, name, icon, members, leftAt, Date.now()],
+      );
+    } catch {
+      // Old schema without the columns - nothing to do.
+    }
   }
 
   // ── Guild settings (generic) ────────────────────────────────

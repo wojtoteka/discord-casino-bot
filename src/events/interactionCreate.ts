@@ -912,6 +912,16 @@ async function handleInteraction(interaction: Interaction): Promise<void> {
       console.log(`[DEBUG] Interakcja odebrana: ${kind} od ${interaction.user?.id}`);
     }
 
+    // Nick and avatar for the website rankings. Throttled and fire-and-forget.
+    if (interaction.user && !interaction.user.bot) {
+      void client.db.syncUserProfile({
+        id: interaction.user.id,
+        username: interaction.user.username,
+        globalName: interaction.user.globalName,
+        avatar: interaction.user.avatar,
+      });
+    }
+
     try {
       // ── Modal submissions ───────────────────────────────────────
       if (interaction.isModalSubmit()) {

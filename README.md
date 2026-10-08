@@ -1,6 +1,6 @@
 # Discord Casino Bot
 
-Rozbudowany bot kasynowy na Discorda napisany w TypeScripcie - **20 gier** (w tym Crash Live dla całego kanału), generowane grafiki zamiast samego tekstu, wirtualna ekonomia z VIP-em, jackpotem i dropami, osiągnięcia, questy, pojedynki między graczami i pełne zaplecze administracyjne w postaci **drugiego, osobnego bota**.
+Rozbudowany bot kasynowy na Discorda napisany w TypeScripcie - **17 gier** (w tym Crash Live dla całego kanału), generowane grafiki zamiast samego tekstu, wirtualna ekonomia z VIP-em, jackpotem i dropami, osiągnięcia, questy, pojedynki między graczami i pełne zaplecze administracyjne w postaci **drugiego, osobnego bota**.
 
 ## Gry
 
@@ -70,6 +70,7 @@ Starsze komendy nadal działają:
 - **`npm install`** na serwerze - doszła zależność `@napi-rs/canvas` (pobiera binarkę pod system).
 - **Katalog `assets/`** musi trafić na serwer obok `dist/` (fonty).
 - **Migracje są automatyczne** - przy starcie bot dodaje kolumny i tabele (`drops`, `jackpot_rounds`, `jackpot_tickets`, `live_bets`).
+- **Dane dla strony wojtoteka.ovh** - bot zapisuje w `users` nick, nazwę wyświetlaną i hash awatara gracza (`username`, `display_name`, `avatar`, przy interakcji, najwyżej raz na kilka godzin), a w `guild_settings` nazwę, ikonę i liczbę członków serwera (`name`, `icon`, `member_count`, `left_at`; przy dołączeniu, wyjściu i co 6 godzin). Kolumna `users.web_hidden` ukrywa gracza w publicznym rankingu na stronie. Ze strony korzystają ranking `/RoyalCasinoBot/ranking` i panel `/admin/royal`.
 - **Intent `MessageContent` został usunięty** - nie był używany, a jako uprzywilejowany blokowałby weryfikację bota powyżej 100 serwerów. Zostaje `GuildMessages` (tylko do liczenia aktywności dla dropów, treść nie jest czytana).
 - **Link zaproszenia** w `constants.ts` ma teraz uprawnienia `274878286912` (podgląd kanału, wysyłanie, osadzanie linków, załączanie plików, historia, reakcje, wątki). Zaktualizuj go też na top.gg i na stronie.
 

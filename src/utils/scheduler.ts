@@ -45,4 +45,14 @@ export function startScheduler(client: CasinoBot): void {
   // are warm by then), then every 6 hours. Per-guild limits live in the DB.
   setTimeout(() => { void permissionReminderTick(client); }, 5 * 60_000);
   setInterval(() => { void permissionReminderTick(client); }, 6 * 60 * 60_000);
+  // Server names and icons for the website: once the cache is warm, then every 6 hours.
+  setTimeout(() => { void guildInfoTick(client); }, 60_000);
+  setInterval(() => { void guildInfoTick(client); }, 6 * 60 * 60_000);
+}
+
+async function guildInfoTick(client: CasinoBot): Promise<void> {
+  for (const guild of client.guilds.cache.values()) {
+    if (!guild.available) continue;
+    await client.db.syncGuildInfo({ id: guild.id, name: guild.name, icon: guild.icon, memberCount: guild.memberCount });
+  }
 }

@@ -99,6 +99,7 @@ export default {
         joined_at: Date.now(),
         ...(existing.language ? {} : { language: detected }),
       });
+      void client.db.syncGuildInfo({ id: guild.id, name: guild.name, icon: guild.icon, memberCount: guild.memberCount });
 
       void sendAdminAlert(client, {
         userId: guild.id,
