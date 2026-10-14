@@ -18,7 +18,6 @@ import { cmd } from '../utils/commandMentions';
 import { EmbedHelper } from '../utils/helpers';
 import { linkRow } from '../commands/kasyno';
 import { buildGuildSettingsView } from '../commands/ustawienia-serwera';
-import { sendAdminAlert } from '../utils/adminAlerts';
 
 const POST_PERMS = [
   PermissionFlagsBits.ViewChannel,
@@ -100,13 +99,6 @@ export default {
         ...(existing.language ? {} : { language: detected }),
       });
       void client.db.syncGuildInfo({ id: guild.id, name: guild.name, icon: guild.icon, memberCount: guild.memberCount });
-
-      void sendAdminAlert(client, {
-        userId: guild.id,
-        kind: 'guild_join',
-        title: '🟢 Nowy serwer',
-        description: `**${guild.name}** (\`${guild.id}\`)\nCzłonkowie: **${guild.memberCount}**\nJęzyk: ${guild.preferredLocale}\nSerwerów łącznie: **${client.guilds.cache.size}**`,
-      });
 
       const channel = welcomeChannel(guild);
       if (!channel) return;
