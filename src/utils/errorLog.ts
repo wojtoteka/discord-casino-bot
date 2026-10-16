@@ -44,6 +44,10 @@ const TRANSIENT_MESSAGES = [
   'Connect Timeout Error',
   'socket hang up',
   'getaddrinfo',
+  // Handshake gatewaya odrzucony przez brzeg Discorda/Cloudflare (ws) - shard sam ponowi.
+  'Unexpected server response: 502',
+  'Unexpected server response: 503',
+  'Unexpected server response: 504',
 ];
 
 type ErrorLike = { name?: unknown; code?: unknown; message?: unknown; cause?: unknown };
