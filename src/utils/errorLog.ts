@@ -44,11 +44,11 @@ const TRANSIENT_MESSAGES = [
   'Connect Timeout Error',
   'socket hang up',
   'getaddrinfo',
-  // Handshake gatewaya odrzucony przez brzeg Discorda/Cloudflare (ws) - shard sam ponowi.
-  'Unexpected server response: 502',
-  'Unexpected server response: 503',
-  'Unexpected server response: 504',
 ];
+
+// Handshake gatewaya odrzucony przez brzeg Discorda/Cloudflare (ws) - shard sam ponowi.
+// 500/502-504 to klasyczne bledy bramy, 520-527 i 530 to kody wlasne Cloudflare'a.
+const TRANSIENT_HANDSHAKE_RESPONSE = /Unexpected server response: (?:50[0234]|52[0-7]|530)\b/;
 
 type ErrorLike = { name?: unknown; code?: unknown; message?: unknown; cause?: unknown };
 
@@ -73,6 +73,7 @@ export function isTransientNetworkError(error: unknown): boolean {
 
     const message = stringField(link.message);
     if (TRANSIENT_MESSAGES.some(fragment => message.includes(fragment))) return true;
+    if (TRANSIENT_HANDSHAKE_RESPONSE.test(message)) return true;
   }
   return false;
 }
