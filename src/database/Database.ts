@@ -39,6 +39,44 @@ function toBotLang(value: unknown): 'pl' | 'en' {
   return raw.trim().toLowerCase() === 'en' ? 'en' : 'pl';
 }
 
+/** Ile najdluzej czekamy na start MariaDB, zanim proces sie podda (pm2 i tak go podniesie). */
+const DB_STARTUP_WAIT_MS = 3 * 60_000;
+
+/** Bledy "serwer jeszcze nie wstal" - na nie czekamy, wszystko inne konczy start od razu. */
+const DB_WAIT_CODES = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'EAI_AGAIN',
+  'PROTOCOL_CONNECTION_LOST',
+  'ER_CON_COUNT_ERROR',
+  'ER_SERVER_SHUTDOWN',
+]);
+
+function explainDbStartupError(
+  error: unknown,
+  server: { host: string; port: number; user: string },
+  dbName: string,
+): string {
+  const { code = '', sqlMessage = '' } = (error ?? {}) as { code?: string; sqlMessage?: string };
+  // Konto tak, jak widzi je MariaDB ('bot'@'localhost' nawet przy DB_HOST=127.0.0.1) - pod nie trzeba dac GRANT.
+  const who = /'[^']*'@'[^']*'/.exec(sqlMessage)?.[0] ?? `'${server.user}'@'${server.host}'`;
+  switch (code) {
+    case 'ER_ACCESS_DENIED_ERROR':
+      return `MariaDB odrzuca logowanie ${who} - sprawdź DB_USER i DB_PASSWORD w .env.`;
+    case 'ER_DBACCESS_DENIED_ERROR':
+      return `Użytkownik ${who} nie może założyć bazy \`${dbName}\`. Raz, jako root w MariaDB: `
+        + `CREATE DATABASE \`${dbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; `
+        + `GRANT ALL PRIVILEGES ON \`${dbName}\`.* TO ${who}; FLUSH PRIVILEGES;`;
+    default:
+      return DB_WAIT_CODES.has(code)
+        ? `MariaDB na ${server.host}:${server.port} nie odpowiada od ${DB_STARTUP_WAIT_MS / 60_000} min (${code}) - czy serwer bazy działa?`
+        : `Nie udało się przygotować bazy \`${dbName}\` (${code || 'nieznany błąd'}).`;
+  }
+}
+
 export interface UserData {
   user_id: string;
   money: number;
@@ -438,14 +476,19 @@ export class Database extends EventEmitter {
     return Math.floor(Date.UTC(year, month - 1, day) / (24 * 60 * 60 * 1000));
   }
 
+  private readonly server = {
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '3306'),
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+  };
+  private readonly dbName = process.env.DB_NAME || 'casino_bot';
+
   constructor() {
     super();
     this.pool = mysql.createPool({
-      host: process.env.DB_HOST || 'localhost',
-      port: parseInt(process.env.DB_PORT || '3306'),
-      user: process.env.DB_USER || 'root',
-      password: process.env.DB_PASSWORD || '',
-      database: process.env.DB_NAME || 'casino_bot',
+      ...this.server,
+      database: this.dbName,
       waitForConnections: true,
       connectionLimit: 25,
       queueLimit: 0,
@@ -454,7 +497,50 @@ export class Database extends EventEmitter {
     });
   }
 
+  /**
+   * Przed tabelami: czeka, az MariaDB zacznie przyjmowac polaczenia (po
+   * restarcie serwera bot potrafi wstac szybciej niz baza), a potem zaklada
+   * sama baze, jesli jej nie ma. Laczy sie bez `database`, bo do nieistniejacej
+   * bazy pool nie wpusci (ER_BAD_DB_ERROR).
+   */
+  private async ensureDatabase(): Promise<void> {
+    const deadline = Date.now() + DB_STARTUP_WAIT_MS;
+    let delay = 2_000;
+
+    for (let attempt = 1; ; attempt++) {
+      let conn: mysql.Connection | null = null;
+      try {
+        conn = await mysql.createConnection({ ...this.server, connectTimeout: 10_000 });
+        const [rows] = await conn.query(
+          'SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?',
+          [this.dbName],
+        );
+        if ((rows as unknown[]).length === 0) {
+          await conn.query(
+            `CREATE DATABASE IF NOT EXISTS ${conn.escapeId(this.dbName)} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+          );
+          console.log(`🆕 Utworzono bazę danych \`${this.dbName}\` - tabele zostaną założone automatycznie`);
+        }
+        return;
+      } catch (error) {
+        const code = String((error as { code?: unknown })?.code ?? '');
+        if (!DB_WAIT_CODES.has(code) || Date.now() + delay > deadline) {
+          console.error(`❌ ${explainDbStartupError(error, this.server, this.dbName)}`);
+          throw error;
+        }
+        console.warn(
+          `⏳ MariaDB niedostępna (${code}, ${this.server.host}:${this.server.port}) - ponawiam za ${delay / 1000}s (próba ${attempt})`,
+        );
+        await new Promise(r => setTimeout(r, delay));
+        delay = Math.min(delay * 2, 15_000);
+      } finally {
+        await conn?.end().catch(() => {});
+      }
+    }
+  }
+
   public async initialize(): Promise<void> {
+    await this.ensureDatabase();
     try {
       // Create users table if not exists
       await this.pool.execute(`

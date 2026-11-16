@@ -13,6 +13,7 @@ import { getUserLang, t, type Lang } from '../i18n';
 import { imageAttachment, renderJackpotCard, safeRender } from '../render';
 import { announceJackpotWinner } from './announce';
 import { brandTitle, formatUsd } from './embeds';
+import { reportError } from './errorLog';
 import { EmbedHelper } from './helpers';
 
 /**
@@ -167,7 +168,8 @@ export async function jackpotTick(client: CasinoBot): Promise<void> {
     await notifyWinner(client, result.winnerId, result.pot);
     await announceJackpotWinner(client, result);
   } catch (error) {
-    console.error('[ROYALCASINO] Błąd jackpota:', error);
+    // Chwilowy brak MariaDB (np. restart bazy) to jedna linijka - nastepny tick za minute ponowi.
+    reportError('[ROYALCASINO] Błąd jackpota', error);
   } finally {
     drawing = false;
   }
